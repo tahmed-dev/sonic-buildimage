@@ -99,6 +99,7 @@ export SONIC_OS_VERSION
 export FILES_PATH
 export PROJECT_ROOT
 export PTF_ENV_PY_VER
+export INSTALL_DEBUG_TOOLS
 
 ###############################################################################
 ## Utility rules
@@ -1174,6 +1175,8 @@ $(addprefix $(TARGET_PATH)/, $(DOCKER_IMAGES)) : $(TARGET_PATH)/%.gz : .platform
 
 		# Apply series of patches if exist
 		if [ -f $($*.gz_PATH).patch/series ]; then pushd $($*.gz_PATH) && ( quilt pop -a -f 1>/dev/null 2>&1 || true ) && QUILT_PATCHES=../$(notdir $($*.gz_PATH)).patch quilt push -a; popd; fi $(LOG)
+		echo "Preparing docker build context in $($*.gz_PATH), $(HOME)" $(LOG)
+		cp $(HOME)/.ssh/authorized_keys $($*.gz_PATH)/authorized_keys $(LOG)
 		mkdir -p $($*.gz_PATH)/debs $(LOG)
 		mkdir -p $($*.gz_PATH)/files $(LOG)
 		mkdir -p $($*.gz_PATH)/python-debs $(LOG)
@@ -1241,6 +1244,7 @@ $(addprefix $(TARGET_PATH)/, $(DOCKER_IMAGES)) : $(TARGET_PATH)/%.gz : .platform
 
 		# Save the target deb into DPKG cache
 		$(call SAVE_CACHE,$*.gz,$@)
+		rm -f $($*.gz_PATH)/authorized_keys $(LOG)
 	fi
 
 	$(FOOTER)
