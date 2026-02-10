@@ -1,11 +1,11 @@
 [submodule "sonic-swss-common"]
 	path = src/sonic-swss-common
-	url = https://github.com/bdfriedman/sonic-swss-common
-    branch = evpn_mh
+	url = https://github.com/tahmed-dev/sonic-swss-common
+    branch = tahmed/octans-int
 [submodule "sonic-linux-kernel"]
 	path = src/sonic-linux-kernel
-	url = https://github.com/bdfriedman/sonic-linux-kernel
-    branch = evpn_mh
+	url = https://github.com/tahmed-dev/sonic-linux-kernel
+    branch = tahmed/octans-int
 [submodule "sonic-sairedis"]
 	path = src/sonic-sairedis
 	url = https://github.com/sonic-net/sonic-sairedis
