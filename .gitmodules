@@ -11,8 +11,8 @@
 	url = https://github.com/sonic-net/sonic-sairedis
 [submodule "sonic-swss"]
 	path = src/sonic-swss
-	url = https://github.com/bdfriedman/sonic-swss
-    branch = evpn_mh
+	url = https://github.com/tahmed-dev/sonic-swss
+    branch = tahmed/octans-int
 [submodule "src/p4c-bm/p4c-bm"]
 	path = platform/p4/p4c-bm/p4c-bm
 	url = https://github.com/krambn/p4c-bm
