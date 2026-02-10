@@ -32,8 +32,6 @@ endif
 	git clean -xfdf
 	git checkout $(FRR_TAG)
 	git reset --hard $(FRR_TAG)
-	stg branch --delete --force $(STG_BRANCH)
-	stg undo || true
 	popd
 	mv $(DERIVED_TARGET) $* $(DEST)/
 
