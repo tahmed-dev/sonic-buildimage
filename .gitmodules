@@ -33,8 +33,8 @@
 	url = https://github.com/p4lang/ptf.git
 [submodule "src/sonic-utilities"]
 	path = src/sonic-utilities
-	url = https://github.com/bdfriedman/sonic-utilities
-    branch = evpn_mh
+	url = https://github.com/tahmed-dev/sonic-utilities
+    branch = tahmed/octans-int
 [submodule "platform/broadcom/sonic-platform-modules-arista"]
 	path = platform/broadcom/sonic-platform-modules-arista
 	url = https://github.com/aristanetworks/sonic
