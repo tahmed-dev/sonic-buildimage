@@ -1,0 +1,94 @@
+From: Mrinmoy Ghosh <mrghosh@cisco.com>
+Subject: [PATCH] bridge:fdb: Add protocol field support for EVPN Multihome
+
+Add optional "protocol" field for bridge fdb entries to distinguish
+between MAC addresses learned via the control plane (e.g. ZEBRA) and
+those learned via the data plane (e.g. HW) in EVPN Multihome scenarios.
+
+Signed-off-by: Mrinmoy Ghosh <mrghosh@cisco.com>
+Co-authored-by: Mike Mallin <mmallin@cisco.com>
+Co-authored-by: Patrice Brissette <pbrisset@cisco.com>
+---
+--- a/bridge/fdb.c	2025-05-26 15:19:09.000000000 +0000
++++ b/bridge/fdb.c	2026-02-13 16:44:55.379975958 +0000
+@@ -41,6 +41,7 @@
+ 		"              [ sticky ] [ local | static | dynamic ] [ vlan VID ]\n"
+ 		"              { [ dst IPADDR ] [ port PORT] [ vni VNI ] | [ nhid NHID ] }\n"
+ 		"	       [ via DEV ] [ src_vni VNI ]\n"
++		"\t       [ protocol PROTO ]\n"
+ 		"       bridge fdb [ show [ br BRDEV ] [ brport DEV ] [ vlan VID ]\n"
+ 		"              [ state STATE ] [ dynamic ] ]\n"
+ 		"       bridge fdb get [ to ] LLADDR [ br BRDEV ] { brport | dev } DEV\n"
+@@ -283,6 +284,14 @@
+ 		print_string(PRINT_ANY, "master", "master %s ",
+ 			     ll_index_to_name(rta_getattr_u32(tb[NDA_MASTER])));
+ 
++	if (tb[NDA_PROTOCOL]) {
++		__u8 proto = rta_getattr_u8(tb[NDA_PROTOCOL]);
++		if (proto != RTPROT_UNSPEC) {
++			SPRINT_BUF(b1);
++			print_string(PRINT_ANY, "protocol", "proto %s ",
++					 rtnl_rtprot_n2a(proto, b1, sizeof(b1)));
++		}
++	}
+ 	print_string(PRINT_ANY, "state", "%s\n",
+ 			   state_n2a(r->ndm_state));
+ 	close_json_object();
+@@ -424,6 +433,7 @@
+ 	char *endptr;
+ 	short vid = -1;
+ 	__u32 nhid = 0;
++	__u32 proto = RTPROT_UNSPEC;
+ 
+ 	while (argc > 0) {
+ 		if (strcmp(*argv, "dev") == 0) {
+@@ -495,6 +505,10 @@
+ 			req.ndm.ndm_flags |= NTF_EXT_LEARNED;
+ 		} else if (matches(*argv, "sticky") == 0) {
+ 			req.ndm.ndm_flags |= NTF_STICKY;
++		} else if (matches(*argv, "protocol") == 0) {
++			NEXT_ARG();
++			if (rtnl_rtprot_a2n(&proto, *argv))
++				invarg("\"protocol\" value is invalid\n", *argv);
+ 		} else {
+ 			if (strcmp(*argv, "to") == 0)
+ 				NEXT_ARG();
+@@ -555,6 +569,9 @@
+ 	if (via)
+ 		addattr32(&req.n, sizeof(req), NDA_IFINDEX, via);
+ 
++	if (proto != RTPROT_UNSPEC)
++		addattr8(&req.n, sizeof(req), NDA_PROTOCOL, proto);
++
+ 	req.ndm.ndm_ifindex = ll_name_to_index(d);
+ 	if (!req.ndm.ndm_ifindex)
+ 		return nodev(d);
+--- a/etc/iproute2/rt_protos	2025-05-26 15:19:09.000000000 +0000
++++ b/etc/iproute2/rt_protos	2026-02-13 16:43:33.377132956 +0000
+@@ -24,3 +24,4 @@
+ 188	ospf
+ 189	rip
+ 192	eigrp
++193	hw
+--- a/include/uapi/linux/rtnetlink.h	2025-05-26 15:19:09.000000000 +0000
++++ b/include/uapi/linux/rtnetlink.h	2026-02-13 16:43:33.377226328 +0000
+@@ -314,6 +314,7 @@
+ #define RTPROT_OSPF		188	/* OSPF Routes */
+ #define RTPROT_RIP		189	/* RIP Routes */
+ #define RTPROT_EIGRP		192	/* EIGRP Routes */
++#define RTPROT_HW		193	/* HW Generated Routes */
+ 
+ /* rtm_scope
+ 
+--- a/lib/rt_names.c	2025-05-26 15:19:09.000000000 +0000
++++ b/lib/rt_names.c	2026-02-13 16:43:33.377281118 +0000
+@@ -148,6 +148,7 @@
+ 	[RTPROT_OSPF]	    = "ospf",
+ 	[RTPROT_RIP]	    = "rip",
+ 	[RTPROT_EIGRP]	    = "eigrp",
++	[RTPROT_HW]	    = "hw",
+ };
+ 
+ struct tabhash {
+-- 
+2.43.0
