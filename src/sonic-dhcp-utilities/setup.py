@@ -7,6 +7,7 @@ dependencies = [
 
 test_deps = [
     "pytest",
+    "pytest-xdist",
 ]
 
 setup(
@@ -16,6 +17,9 @@ setup(
     version="1.0",
     url="https://github.com/Azure/sonic-buildimage",
     tests_require=test_deps,
+    extras_require={
+        "testing": test_deps,
+    },
     author="SONiC Team",
     author_email="yaqiangzhu@microsoft.com",
     setup_requires=[

@@ -15,7 +15,7 @@ class TestChassis(TestCase):
         self.test_dir = os.path.dirname(os.path.realpath(__file__))
         self.script_file = [utils.PYTHON_INTERPRETTER,
                             os.path.join(self.test_dir, '..', 'sonic-cfggen')]
-        self.output_file = os.path.join(self.test_dir, 'output')
+        self.output_file = os.path.join(self.test_dir, 'output.{}'.format(os.getpid()))
         self.macsec_profile = os.path.join(
             self.test_dir, 'macsec_profile.json')
 

@@ -22,10 +22,16 @@ setup(
     description="Package contains remote container mgmt modules",
     url='https://github.com/Azure/sonic-buildimage',
     tests_require=[
+        'pytest-xdist',
         'pytest',
         'pytest-cov',
         'sonic-py-common',
     ],
+    extras_require={
+        'testing': [
+            'pytest-xdist',
+        ],
+    },
     install_requires=['netaddr==0.8.0', 'pyyaml', 'docker'],
     license="GNU General Public License v3",
     long_description=readme + '\n\n',

@@ -52,7 +52,7 @@ class TestJ2Files(TestCase):
         self.nokia_ixr7250e_36x100g_t2_minigraph = os.path.join(self.test_dir, 'sample-nokia-ixr7250e-36x100g-t2-minigraph.xml')
         self.nokia_ixr7250e_36x400g_t2_minigraph = os.path.join(self.test_dir, 'sample-nokia-ixr7250e-36x400g-t2-minigraph.xml')
         self.t2_sample_graph_chassis_packet = os.path.join(self.test_dir, 'sample-chassis-packet-lc-graph.xml')
-        self.output_file = os.path.join(self.test_dir, 'output')
+        self.output_file = os.path.join(self.test_dir, 'output.{}'.format(os.getpid()))
         os.environ["CFGGEN_UNIT_TESTING"] = "2"
 
     def run_script(self, argument, output_file=None):
@@ -74,28 +74,15 @@ class TestJ2Files(TestCase):
     def create_machine_conf(self, platform, vendor):
         file_exist = True
         dir_exist = True
-        mode = {'arista': 'aboot',
-                'dell': 'onie',
-                'mellanox': 'onie'
-               }
-        echo_cmd1 = ["echo", '{}_platform={}'.format(mode[vendor], platform)]
-        echo_cmd2 = ["sudo", "tee", "-a", "/host/machine.conf"]
-        if not os.path.exists('/host/machine.conf'):
-            file_exist = False
-            if not os.path.isdir('/host'):
-                dir_exist = False
-                subprocess.call(['sudo', 'mkdir', '/host'])
-            subprocess.call(['sudo', 'touch', '/host/machine.conf'])
-            getstatusoutput_noshell_pipe(echo_cmd1, echo_cmd2)
+        # Use PLATFORM env var instead of /host/machine.conf to avoid
+        # cross-worker contamination with pytest-xdist. The subprocess
+        # inherits env vars and get_platform() checks PLATFORM first.
+        os.environ["PLATFORM"] = platform
 
         return file_exist, dir_exist
 
     def remove_machine_conf(self, file_exist, dir_exist):
-        if not file_exist:
-            subprocess.call(['sudo', 'rm', '-f', '/host/machine.conf'])
-
-        if not dir_exist:
-            subprocess.call(['sudo', 'rmdir', '/host'])
+        os.environ.pop("PLATFORM", None)
 
     def modify_cable_len(self, base_file, file_dir):
         input_file = os.path.join(file_dir, base_file)
