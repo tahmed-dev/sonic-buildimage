@@ -291,7 +291,9 @@ setup(
     extras_require = {
         "testing": [
             'pytest',
-            'ijson==3.2.3'
+            'pytest-xdist',
+            'ijson==3.2.3',
+            'libyang',
         ],
     },
     include_package_data=True,
