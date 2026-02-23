@@ -1,15 +1,19 @@
 [submodule "sonic-swss-common"]
 	path = src/sonic-swss-common
-	url = https://github.com/sonic-net/sonic-swss-common
+	url = https://github.com/tahmed-dev/sonic-swss-common
+    branch = tahmed/octans-int
 [submodule "sonic-linux-kernel"]
 	path = src/sonic-linux-kernel
-	url = https://github.com/sonic-net/sonic-linux-kernel
+	url = https://github.com/tahmed-dev/sonic-linux-kernel
+    branch = tahmed/octans-int
 [submodule "sonic-sairedis"]
 	path = src/sonic-sairedis
-	url = https://github.com/sonic-net/sonic-sairedis
+	url = https://github.com/tahmed-dev/sonic-sairedis
+	branch = tahmed/octans-int
 [submodule "sonic-swss"]
 	path = src/sonic-swss
-	url = https://github.com/sonic-net/sonic-swss
+	url = https://github.com/tahmed-dev/sonic-swss
+    branch = tahmed/octans-int
 [submodule "src/p4c-bm/p4c-bm"]
 	path = platform/p4/p4c-bm/p4c-bm
 	url = https://github.com/krambn/p4c-bm
@@ -24,29 +28,33 @@
 	url = https://github.com/sonic-net/sonic-py-swsssdk.git
 [submodule "src/sonic-snmpagent"]
 	path = src/sonic-snmpagent
-	url = https://github.com/sonic-net/sonic-snmpagent
+	url = https://github.com/tahmed-dev/sonic-snmpagent
+	branch = tahmed/octans-int
 [submodule "src/ptf"]
 	path = src/ptf
 	url = https://github.com/p4lang/ptf.git
 [submodule "src/sonic-utilities"]
 	path = src/sonic-utilities
-	url = https://github.com/sonic-net/sonic-utilities
+	url = https://github.com/tahmed-dev/sonic-utilities
+    branch = tahmed/octans-int
 [submodule "platform/broadcom/sonic-platform-modules-arista"]
 	path = platform/broadcom/sonic-platform-modules-arista
 	url = https://github.com/aristanetworks/sonic
 [submodule "src/sonic-platform-common"]
 	path = src/sonic-platform-common
-	url = https://github.com/sonic-net/sonic-platform-common
+	url = https://github.com/tahmed-dev/sonic-platform-common
+	branch = tahmed/octans-int
 [submodule "src/sonic-platform-daemons"]
 	path = src/sonic-platform-daemons
-	url = https://github.com/sonic-net/sonic-platform-daemons
+	url = https://github.com/tahmed-dev/sonic-platform-daemons
+	branch = tahmed/octans-int
 [submodule "src/sonic-platform-pde"]
 	path = src/sonic-platform-pde
 	url = https://github.com/sonic-net/sonic-platform-pdk-pde
 [submodule "src/sonic-frr/frr"]
 	path = src/sonic-frr/frr
-	url = https://github.com/sonic-net/sonic-frr.git
-	branch = frr-10.4.1
+	url = https://github.com/bdfriedman/frr
+    branch = evpn_mh
 [submodule "platform/p4/p4-hlir/p4-hlir-v1.1"]
 	path = platform/p4/p4-hlir/p4-hlir-v1.1
 	url = https://github.com/p4lang/p4-hlir.git
@@ -99,10 +107,12 @@
 	url = https://github.com/p4lang/ptf.git
 [submodule "src/dhcprelay"]
 	path = src/dhcprelay
-	url = https://github.com/sonic-net/sonic-dhcp-relay.git
+	url = https://github.com/tahmed-dev/sonic-dhcp-relay.git
+	branch = tahmed/octans-int
 [submodule "src/sonic-host-services"]
 	path = src/sonic-host-services
-	url = https://github.com/sonic-net/sonic-host-services
+	url = https://github.com/tahmed-dev/sonic-host-services
+	branch = tahmed/octans-int
 [submodule "src/sonic-gnmi"]
 	path = src/sonic-gnmi
 	url = https://github.com/sonic-net/sonic-gnmi.git
@@ -129,7 +139,8 @@
 	url = https://github.com/Marvell-switching/sonic-platform-marvell.git
 [submodule "platform/vpp"]
 	path = platform/vpp
-	url = https://github.com/sonic-net/sonic-platform-vpp.git
+	url = https://github.com/tahmed-dev/sonic-platform-vpp.git
+	branch = tahmed/octans-int
 [submodule "platform/marvell-prestera/mrvl-prestera"]
 	path = platform/marvell-prestera/mrvl-prestera
 	url = https://github.com/Marvell-switching/mrvl-prestera.git
@@ -148,3 +159,6 @@
 [submodule "platform/alpinevs"]
 	path = platform/alpinevs
 	url = https://github.com/sonic-net/sonic-alpine/
+[submodule "src/iproute2/iproute2"]
+	path = src/iproute2/iproute2
+	url = https://github.com/iproute2/iproute2.git
