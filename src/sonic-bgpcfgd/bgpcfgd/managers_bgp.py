@@ -211,8 +211,12 @@ class BGPPeerMgrBase(Manager):
             'neighbor_addr': nbr,
             'bgp_session': data,
             'CONFIG_DB__LOOPBACK_INTERFACE':{ tuple(key.split('|')) : {} for key in self.directory.get_slot("CONFIG_DB", swsscommon.CFG_LOOPBACK_INTERFACE_TABLE_NAME)
-                                                                         if '|' in key }
+                                                                         if '|' in key },
         }
+        try:
+            kwargs['CONFIG_DB__VXLAN_EVPN_NVO'] = self.directory.get_slot('CONFIG_DB', 'VXLAN_EVPN_NVO')
+        except KeyError:
+            kwargs['CONFIG_DB__VXLAN_EVPN_NVO'] = {}
         if lo0_ipv4 is not None:
             kwargs['loopback0_ipv4'] = lo0_ipv4
         if self.check_neig_meta:
