@@ -1,0 +1,45 @@
+Source: iproute2
+Section: net
+Priority: optional
+Maintainer: Debian Kernel Team <debian-kernel@lists.debian.org>
+Uploaders: Luca Boccassi <bluca@debian.org>
+Homepage: https://wiki.linuxfoundation.org/networking/iproute2
+Vcs-Browser: https://salsa.debian.org/kernel-team/iproute2
+Vcs-Git: https://salsa.debian.org/kernel-team/iproute2.git
+Standards-Version: 4.7.2
+Rules-Requires-Root: no
+Build-Depends: bison,
+               debhelper-compat (= 13),
+               flex,
+               libxtables-dev,
+               libatm1-dev,
+               libbsd-dev,
+               libbpf-dev (>= 1:0.1.0~),
+               libcap-dev,
+               libdb-dev,
+               libelf-dev,
+               libmnl-dev,
+               libnsl-dev,
+               libselinux1-dev,
+               linux-libc-dev,
+               pkgconf,
+               po-debconf,
+               zlib1g-dev,
+
+Package: iproute2
+Priority: important
+Architecture: linux-any
+Provides: arpd
+Conflicts: arpd
+Breaks: iproute2-doc
+Replaces: iproute2-doc
+Depends: ${misc:Depends}, ${shlibs:Depends}, libcap2-bin,
+Suggests: python3:any
+Multi-Arch: foreign
+Description: networking and traffic control tools
+ The iproute2 suite is a collection of utilities for networking and
+ traffic control.
+ .
+ These tools communicate with the Linux kernel via the (rt)netlink
+ interface, providing advanced features not available through the
+ legacy net-tools commands 'ifconfig' and 'route'.
