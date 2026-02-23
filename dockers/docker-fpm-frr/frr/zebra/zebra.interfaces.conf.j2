@@ -35,3 +35,22 @@ no link-detect
 {% endif %}
 {% endblock interfaces %}
 !
+{% block evpn_mh %}
+{% if EVPN_ETHERNET_SEGMENT is defined %}
+{% for es_intf, es_config in EVPN_ETHERNET_SEGMENT.items() %}
+{% if es_config.es_id is defined %}
+interface {{ es_intf }}
+ evpn mh es-id {{ es_config.es_id }}
+{% if es_config.es_sys_mac is defined %}
+ evpn mh es-sys-mac {{ es_config.es_sys_mac }}
+{% endif %}
+{% if es_config.df_pref is defined %}
+ evpn mh es-df-pref {{ es_config.df_pref }}
+{% endif %}
+!
+{% endif %}
+{% endfor %}
+evpn mh startup-delay 30
+{% endif %}
+{% endblock evpn_mh %}
+!
