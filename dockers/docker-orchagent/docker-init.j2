@@ -5,6 +5,11 @@ mkdir -p /etc/supervisor/
 mkdir -p /etc/supervisor/conf.d/
 mkdir -p /dev/shm/supervisor/
 
+{% if INSTALL_DEBUG_TOOLS == "y" %}
+service ssh restart || true
+nohup gdbserver --disable-randomization --startup-with-shell --multi :2202 &> /var/log/gdbserver.log &
+{% endif %}
+
 CFGGEN_PARAMS=" \
     -d \
 {% if ENABLE_ASAN == "y" %}
