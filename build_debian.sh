@@ -502,9 +502,24 @@ EOF
 # Configure sshd to listen for v4 and v6 connections
 sudo sed -i 's/^#ListenAddress 0.0.0.0/ListenAddress 0.0.0.0/' $FILESYSTEM_ROOT/etc/ssh/sshd_config
 sudo sed -i 's/^#ListenAddress ::/ListenAddress ::/' $FILESYSTEM_ROOT/etc/ssh/sshd_config
+if [[ $CONFIGURED_PLATFORM == vpp || $INSTALL_DEBUG_TOOLS == y ]]; then
+    echo "Configuring SSH for debugging"
+    sudo sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' $FILESYSTEM_ROOT/etc/ssh/sshd_config
+    sudo sed -i 's/#AllowAgentForwarding yes/AllowAgentForwarding yes/' $FILESYSTEM_ROOT/etc/ssh/sshd_config
+    sudo sed -i 's/#AllowTcpForwarding yes/AllowTcpForwarding yes/' $FILESYSTEM_ROOT/etc/ssh/sshd_config
+    sudo LANG=C chroot $FILESYSTEM_ROOT mkdir -p /home/$USERNAME/.ssh || true
+    sudo cp $HOME/.ssh/authorized_keys $FILESYSTEM_ROOT/home/$USERNAME/.ssh/ 2> /dev/null || true
+    sudo LANG=C chroot $FILESYSTEM_ROOT chmod go= /home/$USERNAME/.ssh -R
+    sudo LANG=C chroot $FILESYSTEM_ROOT chown $USERNAME:$USERNAME /home/$USERNAME/.ssh -R
+fi
 
 # Use libpam_systemd, since that's now needed for limiting login sessions
-sudo LANG=C DEBIAN_FRONTEND=noninteractive chroot $FILESYSTEM_ROOT apt-get -y install libpam-systemd
+sudo LANG=C DEBIAN_FRONTEND=noninteractive chroot $FILESYSTEM_ROOT apt-get -y autoremove
+sudo LANG=C DEBIAN_FRONTEND=noninteractive chroot $FILESYSTEM_ROOT apt-get -y install \
+    libpam-systemd \
+    libcryptsetup12 \
+    libtss2-rc0t64 \
+    dbus-user-session
 
 ## Config rsyslog
 sudo augtool -r $FILESYSTEM_ROOT --autosave "
@@ -671,7 +686,6 @@ then
     sudo mkdir -p $FILESYSTEM_ROOT/src
     sudo cp $DEBUG_SRC_ARCHIVE_FILE $FILESYSTEM_ROOT/src/
     sudo mkdir -p $FILESYSTEM_ROOT/debug
-
 fi
 
 ## Set FIPS runtime default option

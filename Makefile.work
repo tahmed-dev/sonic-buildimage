@@ -531,10 +531,14 @@ SONIC_SLAVE_USER_BUILD = \
 	{ \
 		set -o pipefail ; \
 		echo Image $(SLAVE_IMAGE):$(SLAVE_TAG) not found. Building... ; \
+		cat $(HOME)/.ssh/*.pub 2> /dev/null >> $(SLAVE_DIR)/authorized_keys 2> /dev/null || touch $(SLAVE_DIR)/authorized_keys 2> /dev/null ; \
+		cp $(HOME)/.git* $(SLAVE_DIR)/ 2> /dev/null || true ; \
 		$(DOCKER_USER_BUILD) ; \
+		rm -f $(SLAVE_DIR)/authorized_keys 2> /dev/null || true ; \
+		rm -f $(SLAVE_DIR)/.git* 2> /dev/null || true ; \
 	}
 
-SONIC_BUILD_INSTRUCTION :=  $(MAKE) \
+SONIC_BUILD_INSTRUCTION := $(MAKE) \
                            -f slave.mk \
                            PLATFORM=$(PLATFORM) \
                            PLATFORM_ARCH=$(PLATFORM_ARCH) \
@@ -561,7 +565,7 @@ SONIC_BUILD_INSTRUCTION :=  $(MAKE) \
                            MDEBUG=$(MDEBUG) \
                            PASSWORD=$(PASSWORD) \
                            USERNAME=$(USERNAME) \
-			   CHANGE_DEFAULT_PASSWORD=$(CHANGE_DEFAULT_PASSWORD) \
+                           CHANGE_DEFAULT_PASSWORD=$(CHANGE_DEFAULT_PASSWORD) \
                            SONIC_BUILD_JOBS=$(SONIC_BUILD_JOBS) \
                            SONIC_USE_DOCKER_BUILDKIT=$(SONIC_USE_DOCKER_BUILDKIT) \
                            VS_PREPARE_MEM=$(VS_PREPARE_MEM) \
@@ -590,7 +594,7 @@ SONIC_BUILD_INSTRUCTION :=  $(MAKE) \
                            SONIC_INCLUDE_MUX=$(INCLUDE_MUX) \
                            ENABLE_TRANSLIB_WRITE=$(ENABLE_TRANSLIB_WRITE) \
                            ENABLE_NATIVE_WRITE=$(ENABLE_NATIVE_WRITE) \
-			   ENABLE_DIALOUT=$(ENABLE_DIALOUT) \
+                           ENABLE_DIALOUT=$(ENABLE_DIALOUT) \
                            EXTRA_DOCKER_TARGETS=$(EXTRA_DOCKER_TARGETS) \
                            BUILD_LOG_TIMESTAMP=$(BUILD_LOG_TIMESTAMP) \
                            SONIC_ENABLE_IMAGE_SIGNATURE=$(ENABLE_IMAGE_SIGNATURE) \
@@ -661,7 +665,7 @@ endif
 
 	$(Q)$(DOCKER_RUN) \
 		$(SLAVE_IMAGE):$(SLAVE_TAG) \
-		bash -c "$(SONIC_BUILD_INSTRUCTION) $@ SONIC_BUILD_TARGET=$@; $(COLLECT_BUILD_VERSION); $(SLAVE_SHELL)"
+		bash -c "sudo service ssh start; $(SONIC_BUILD_INSTRUCTION) $@ SONIC_BUILD_TARGET=$@; $(COLLECT_BUILD_VERSION); $(SLAVE_SHELL)"
 	$(Q)$(docker-image-cleanup)
 
 docker-cleanup:
@@ -695,7 +699,7 @@ showtag:
 
 init :
 	$(Q)git submodule update --init --recursive
-	$(Q)git submodule foreach --recursive '[ -f .git ] && echo "gitdir: $$(realpath --relative-to=. $$(cut -d" " -f2 .git))" > .git'
+	$(Q)git submodule foreach --recursive '[ -f .git ] && echo "gitdir: $$(realpath --relative-to=. $$(cut -d" " -f2 .git))" > .git || true'
 
 .ONESHELL : reset
 reset :
