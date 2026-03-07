@@ -39,7 +39,7 @@ class TestMultiNpuCfgGen(TestCase):
         for asic in range(NUM_ASIC):
             self.port_config.append(os.path.join(self.test_data_dir, "sample_port_config-{}.ini".format(asic)))
         self.sample_no_asic_port_config = os.path.join(self.test_data_dir, 'sample_port_config-4.ini')
-        self.output_file = os.path.join(self.test_dir, 'output')
+        self.output_file = os.path.join(self.test_dir, 'output.{}'.format(os.getpid()))
         os.environ["CFGGEN_UNIT_TESTING"] = "2"
         os.environ["CFGGEN_UNIT_TESTING_TOPOLOGY"] = "multi_asic"
 
@@ -239,8 +239,7 @@ class TestMultiNpuCfgGen(TestCase):
              "Ethernet-BP12": { "admin_status": "up",  "alias": "Eth7-ASIC0",  "asic_port_name": "Eth7-ASIC0",  "description": "ASIC3:Eth1-ASIC3",  "index": "3",  "lanes": "25,26,27,28",  "mtu": "9100", "tpid": "0x8100", "pfc_asym": "off",  "role": "Int",  "speed": "40000" }})
 
     def test_hwsku_option_port_list_port_config_ini(self):
-        mock.patch('device_info.get_path_to_port_config_file', mock.MagicMock(return_value=self.sample_port_config_0))
-        argument = ["-k", ASIC_SKU, "-n", "asic0", "-v", "PORT.keys()|list"]
+        argument = ["-k", ASIC_SKU, "-p", self.sample_port_config_0, "-n", "asic0", "-v", "PORT.keys()|list"]
         output = self.run_script(argument)
         self.assertEqual(
             utils.liststr_to_dict(output.strip()),
@@ -248,7 +247,9 @@ class TestMultiNpuCfgGen(TestCase):
         )
 
     def test_hwsku_option_port_list_configdb(self):
-        mock.patch('device_info.get_path_to_port_config_file', mock.MagicMock(return_value=None))
+        # When no port_config file is given, sonic-cfggen reads from ConfigDB
+        # (mock DB via CFGGEN_UNIT_TESTING=2). Ensure no /host/machine.conf
+        # interferes with platform detection.
         argument = ["-k", ASIC_SKU, "-n", "asic0", "-v", "PORT.keys()|list"]
         output = self.run_script(argument)
         self.assertEqual(
