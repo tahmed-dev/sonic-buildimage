@@ -5,15 +5,15 @@ Subject: [PATCH] [build] use relative path when building cargo dependency
  swss-common.
 
 ---
- Cargo.toml | 4 ++--
- 1 file changed, 2 insertions(+), 2 deletions(-)
+ Cargo.toml | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/Cargo.toml b/Cargo.toml
-index a2db894e..7484110a 100644
+index 5f59681d..5e08ea51 100644
 --- a/Cargo.toml
 +++ b/Cargo.toml
-@@ -64,7 +64,7 @@ itertools = "0.13"
- uuid = { version = "1.15", features = ["v4"] }
+@@ -87,7 +87,7 @@ reqwest-middleware = "0.3"
+ reqwest-tracing = { version = "0.5", features = ["opentelemetry_0_25"] }
  
  # SONiC specific dependencies
 -swss-common = { git = "https://github.com/sonic-net/sonic-swss-common.git", branch = "master" }
