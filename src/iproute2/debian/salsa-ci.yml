@@ -1,0 +1,9 @@
+---
+include:
+  - https://salsa.debian.org/salsa-ci-team/pipeline/raw/master/salsa-ci.yml
+  - https://salsa.debian.org/salsa-ci-team/pipeline/raw/master/pipeline-jobs.yml
+
+variables:
+  # Many false positives due to issue in binutils:
+  # https://bugs.debian.org/1000977
+  SALSA_CI_LINTIAN_SUPPRESS_TAGS: "elf-error"

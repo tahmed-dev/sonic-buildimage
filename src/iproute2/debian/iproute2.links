@@ -1,0 +1,3 @@
+/usr/bin/lnstat usr/bin/ctstat
+/usr/bin/lnstat usr/bin/rtstat
+/usr/bin/ip usr/sbin/ip

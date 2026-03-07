@@ -1,0 +1,56 @@
+From df532f8f4b7e9a4b3c8bb8086c1c9b32f507276c Mon Sep 17 00:00:00 2001
+From: Tamer Ahmed <tamerahmed@microsoft.com>
+Date: Wed, 25 Feb 2026 15:43:01 -0800
+Subject: [PATCH] zebra: Add NTF_EXT_VALIDATED for EVPN MH peer-active
+ neighbors
+
+Set NTF_E_VALIDATED alongside NTF_E_MH_PEER_SYNC in
+netlink_neigh_update_ctx() for static (peer-active) neighbor entries.
+This tells the kernel not to GC or move these entries to NUD_FAILED,
+as their lifecycle is managed by FRR's EVPN MH control plane.
+
+Required for draft-rbickhart-evpn-ip-mac-proxy-adv neighbor proxy
+advertisement support.
+
+Signed-off-by: Tamer Ahmed <tamerahmed@microsoft.com>
+---
+ include/linux/neighbour.h | 1 +
+ zebra/rt_netlink.c        | 9 ++++++++-
+ 2 files changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/include/linux/neighbour.h b/include/linux/neighbour.h
+index 581af73c7f..20bbe2acc6 100644
+--- a/include/linux/neighbour.h
++++ b/include/linux/neighbour.h
+@@ -53,6 +53,7 @@ enum {
+ /* Neighbor Cache Entry extended flags, part of NDA_EXT_FLAGS attribute */
+ #define NTF_E_WEAK_OVERRIDE_STATE 0x01
+ #define NTF_E_MH_PEER_SYNC 0x02
++#define NTF_E_VALIDATED 0x08
+ 
+ /*
+  *	Neighbor Cache Entry States.
+diff --git a/zebra/rt_netlink.c b/zebra/rt_netlink.c
+index 3dc5c702e6..e7c3b1eb7a 100644
+--- a/zebra/rt_netlink.c
++++ b/zebra/rt_netlink.c
+@@ -5014,8 +5014,15 @@ static ssize_t netlink_neigh_update_ctx(const struct zebra_dplane_ctx *ctx,
+ 	} else if (!(update_flags & DPLANE_NEIGH_NO_EXTENSION)) {
+ 		ext = true;
+ 		/* local neigh */
+-		if (update_flags & DPLANE_NEIGH_SET_STATIC)
++		if (update_flags & DPLANE_NEIGH_SET_STATIC) {
+ 			ext_flags |= NTF_E_MH_PEER_SYNC;
++			/* NTF_E_VALIDATED: externally validated entry —
++			 * kernel will not GC or move to NUD_FAILED.
++			 * Required for EVPN MH peer-active neighbors
++			 * installed by FRR (draft-rbickhart-evpn-ip-mac-proxy-adv).
++			 */
++			ext_flags |= NTF_E_VALIDATED;
++		}
+ 	}
+ 	if (IS_ZEBRA_DEBUG_KERNEL)
+ 		zlog_debug(
+-- 
+2.43.0
+
