@@ -29,7 +29,7 @@ class TestCfgGen(TestCase):
         self.port_config = os.path.join(self.test_dir, 't0-sample-port-config.ini')
         self.port_config_autoneg = os.path.join(self.test_dir, 't0-sample-autoneg-port-config.ini')
         self.mlnx_port_config = os.path.join(self.test_dir, 'mellanox-sample-port-config.ini')
-        self.output_file = os.path.join(self.test_dir, 'output')
+        self.output_file = os.path.join(self.test_dir, 'output.{}'.format(os.getpid()))
         self.output2_file = os.path.join(self.test_dir, 'output2')
         self.ecmp_graph = os.path.join(self.test_dir, 'fg-ecmp-sample-minigraph.xml')
         self.sample_resource_graph = os.path.join(self.test_dir, 'sample-graph-resource-type.xml')
