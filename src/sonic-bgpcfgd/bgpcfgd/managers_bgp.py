@@ -143,6 +143,13 @@ class BGPPeerMgrBase(Manager):
         if self.peer_type == 'internal':
             deps.append(("CONFIG_DB", swsscommon.CFG_LOOPBACK_INTERFACE_TABLE_NAME, "Loopback4096"))
 
+        # VXLAN_EVPN_NVO is NOT a blocking dependency (peers should render even
+        # without it) — but when it appears we must re-render peer-groups so
+        # that templates gated on NVO (e.g. allowas-in for EVPN LeafRouter)
+        # pick up the change.  We subscribe to it separately and override
+        # on_deps_change to handle the re-render.
+        self._nvo_dep = ("CONFIG_DB", "VXLAN_EVPN_NVO", "")
+
         super(BGPPeerMgrBase, self).__init__(
             common_objs,
             deps,
@@ -150,9 +157,37 @@ class BGPPeerMgrBase(Manager):
             table_name,
         )
 
+        # Subscribe to NVO changes separately (non-blocking dep)
+        self.directory.subscribe([self._nvo_dep], self._on_nvo_change)
+        self._nvo_rendered = False
+
         self.peers = self.load_peers()
         self.peer_group_mgr = BGPPeerGroupMgr(self.common_objs, base_template)
         return
+
+    def _on_nvo_change(self):
+        """
+        Called when VXLAN_EVPN_NVO directory slot changes.
+        Re-render peer-groups for all already-processed peers so that
+        templates gated on NVO (e.g. allowas-in 1 for LeafRouter) take effect.
+        """
+        if self._nvo_rendered:
+            return  # already re-rendered once; NVO doesn't change after initial load
+        try:
+            nvo = self.directory.get_slot('CONFIG_DB', 'VXLAN_EVPN_NVO')
+            if not nvo:
+                return
+        except KeyError:
+            return
+        self._nvo_rendered = True
+        log_info("VXLAN_EVPN_NVO appeared — re-rendering peer-groups for %d peers" % len(self.peers))
+        # Re-process all existing peers to pick up NVO-dependent template changes
+        for key in list(self.peers):
+            vrf, nbr = key
+            full_key = vrf + '|' + nbr if vrf != 'default' else nbr
+            data = self.directory.get(self.db_name, self.table_name, full_key)
+            if data:
+                self.add_peer(vrf, nbr, data)
 
     def set_handler(self, key, data):
         """
@@ -211,8 +246,12 @@ class BGPPeerMgrBase(Manager):
             'neighbor_addr': nbr,
             'bgp_session': data,
             'CONFIG_DB__LOOPBACK_INTERFACE':{ tuple(key.split('|')) : {} for key in self.directory.get_slot("CONFIG_DB", swsscommon.CFG_LOOPBACK_INTERFACE_TABLE_NAME)
-                                                                         if '|' in key }
+                                                                         if '|' in key },
         }
+        try:
+            kwargs['CONFIG_DB__VXLAN_EVPN_NVO'] = self.directory.get_slot('CONFIG_DB', 'VXLAN_EVPN_NVO')
+        except KeyError:
+            kwargs['CONFIG_DB__VXLAN_EVPN_NVO'] = {}
         if lo0_ipv4 is not None:
             kwargs['loopback0_ipv4'] = lo0_ipv4
         if self.check_neig_meta:
