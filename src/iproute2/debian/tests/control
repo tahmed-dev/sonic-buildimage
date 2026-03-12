@@ -1,0 +1,15 @@
+# Dummy test so that changes to key packages trigger our autopkgtests on ci.debian.net
+Features: test-name=hint-testsuite-triggers
+Test-Command: /bin/true
+Depends:
+  linux-image-generic,
+  linux-image-amd64 [amd64],
+  linux-image-arm64 [arm64],
+  gcc,
+Restrictions: hint-testsuite-triggers
+
+# the tests depend on the kernel and might break the env
+# therefore do not run as build time tests
+Tests: testsuite.sh
+Restrictions: allow-stderr, isolation-machine, needs-root, rw-build-tree
+Depends: locales-all, sudo:native, kmod, @builddeps@

@@ -1,0 +1,73 @@
+# Swedish translation of iproute2 debconf messages
+# Copyright (C) The iproute2 package copyright holders
+# This file is distributed under the same license as the iproute2 package.
+# Peter Kvillegård <peterkvillegard@posteo.net>, 2023.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: iproute2 6.4.0-1\n"
+"Report-Msgid-Bugs-To: iproute2@packages.debian.org\n"
+"POT-Creation-Date: 2018-04-12 12:01+0100\n"
+"PO-Revision-Date: 2023-08-21 19:02+0200\n"
+"Last-Translator: Peter Kvillegård <peterkvillegard@posteo.net>\n"
+"Language-Team: Swedish <debian-l10n-swedish@lists.debian.org>\n"
+"Language: sv\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: Poedit 3.2.2\n"
+
+#. Type: boolean
+#. Description
+#: ../iproute2.templates:1001
+msgid "Allow ordinary users to run ip vrf exec using capabilities?"
+msgstr ""
+"Tillåt vanliga användare att köra ip vrf exec genom att använda förmågor "
+"(capabilities)?"
+
+#. Type: boolean
+#. Description
+#: ../iproute2.templates:1001
+msgid ""
+"iproute2 can be used to configure and use Virtual Routing and Forwarding "
+"(VRF) functionality in the  kernel. This normally requires root permissions, "
+"but sometimes it's useful to allow ordinary users to execute commands from "
+"inside a virtual routing and forwarding domain. E.g. ip vrf exec examplevrf "
+"ping 10.0.0.1"
+msgstr ""
+"iproute2 kan användas för att konfigurera och använda kärnans funktioner för "
+"virtuell dirigering och vidarebefordran (Virtual Routing and Forwarding "
+"(VRF)). Detta kräver vanligen root-rättigheter, men ibland är det användbart "
+"att tillåta vanliga användare att köra kommandon inifrån en domän för "
+"virtuell dirigering och vidarebefordran. Till exempel ip vrf exec exempelvrf "
+"ping 10.0.0.1"
+
+#. Type: boolean
+#. Description
+#: ../iproute2.templates:1001
+msgid ""
+"The ip command supports dropping capabilities, making an exception for ip "
+"vrf exec. The drawback of setting the permissions is that if in the unlikely "
+"case of a security critical bug being found before the ip command has "
+"dropped capabilities then it could be used by an attacker to gain root "
+"permissions. It's up to you to decide about the trade-offs and select the "
+"best setting for your system. This will give cap_dac_override, cap_net_admin "
+"and cap_bpf to /bin/ip."
+msgstr ""
+"Kommandot ip stödjer att ta bort förmågor (capabilities) med undantag för ip "
+"vrf exec. Nackdelen med att ställa in rättigheterna är att i den osannolika "
+"händelsen av att ett kritiskt säkerhetsfel hittas innan ip har tagit bort "
+"förmågor, så kan det användas av en angripare för att få root-rättigheter. "
+"Det är upp till dig att göra en avvägning och välja vad som passar bäst för "
+"ditt system. Detta kommer att ge förmågorna cap_dac_override, cap_net_admin, "
+"och cap_bpf till /bin/ip."
+
+#. Type: boolean
+#. Description
+#: ../iproute2.templates:1001
+msgid ""
+"More information about VRF can be found at: https://www.kernel.org/doc/"
+"Documentation/networking/vrf.txt"
+msgstr ""
+"Mer information om virtuell dirigering och vidarebefordran (VRF) kan hittas "
+"på https://www.kernel.org/doc/Documentation/networking/vrf.txt"
