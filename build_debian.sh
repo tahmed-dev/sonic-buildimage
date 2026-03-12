@@ -514,7 +514,12 @@ if [[ $CONFIGURED_PLATFORM == vpp || $INSTALL_DEBUG_TOOLS == y ]]; then
 fi
 
 # Use libpam_systemd, since that's now needed for limiting login sessions
-sudo LANG=C DEBIAN_FRONTEND=noninteractive chroot $FILESYSTEM_ROOT apt-get -y install libpam-systemd
+sudo LANG=C DEBIAN_FRONTEND=noninteractive chroot $FILESYSTEM_ROOT apt-get -y autoremove
+sudo LANG=C DEBIAN_FRONTEND=noninteractive chroot $FILESYSTEM_ROOT apt-get -y install \
+    libpam-systemd \
+    libcryptsetup12 \
+    libtss2-rc0t64 \
+    dbus-user-session
 
 ## Config rsyslog
 sudo augtool -r $FILESYSTEM_ROOT --autosave "
@@ -681,7 +686,6 @@ then
     sudo mkdir -p $FILESYSTEM_ROOT/src
     sudo cp $DEBUG_SRC_ARCHIVE_FILE $FILESYSTEM_ROOT/src/
     sudo mkdir -p $FILESYSTEM_ROOT/debug
-
 fi
 
 ## Set FIPS runtime default option
