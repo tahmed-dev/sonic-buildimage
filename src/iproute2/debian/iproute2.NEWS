@@ -1,0 +1,8 @@
+iproute2 (6.5.0-4) unstable; urgency=medium
+
+  iproute2's upstream now installs default configuration files under /usr/
+  instead of /etc/, following the hermetic-usr pattern. Files with the same
+  names in /etc/ will override the defaults in /usr/. Any locally modified old
+  configuration file in /etc/ will be retained as an override on upgrade.
+
+ -- Luca Boccassi <bluca@debian.org>  Sat, 16 Sep 2023 18:58:51 +0100
