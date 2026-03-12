@@ -695,7 +695,7 @@ showtag:
 
 init :
 	$(Q)git submodule update --init --recursive
-	$(Q)git submodule foreach --recursive '[ -f .git ] && echo "gitdir: $$(realpath --relative-to=. $$(cut -d" " -f2 .git))" > .git'
+	$(Q)git submodule foreach --recursive '[ -f .git ] && echo "gitdir: $$(realpath --relative-to=. $$(cut -d" " -f2 .git))" > .git || true'
 
 .ONESHELL : reset
 reset :
