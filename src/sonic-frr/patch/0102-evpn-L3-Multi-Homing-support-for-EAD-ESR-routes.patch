@@ -1,0 +1,310 @@
+From fe910a3ee016a6d509d0bc21f58dfb88ce8e6b94 Mon Sep 17 00:00:00 2001
+From: Tamer Ahmed <tamerahmed@microsoft.com>
+Date: Fri, 6 Mar 2026 14:06:00 -0800
+Subject: [PATCH] evpn: add L3 Multi-Homing (L3MH) support for EAD/ESR routes
+
+Enable EVPN ES Type-1 EAD and Type-4 ESR route advertisement for L3-only
+services without requiring an L2 VNI/EVI.
+
+Per draft-mackenzie-bess-evpn-l3mh-proto-07, an ES interface may be a
+routed L3 interface in a VRF with an L3 VNI.
+
+Signed-off-by: Tamer Ahmed <tamerahmed@microsoft.com>
+---
+ bgpd/bgp_evpn_mh.c    | 40 ++++++++++++++++++++++++++--
+ bgpd/bgp_evpn_mh.h    |  7 ++++-
+ bgpd/bgp_evpn_vty.c   |  2 +-
+ bgpd/bgp_zebra.c      |  8 +++---
+ zebra/zebra_evpn_mh.c | 61 ++++++++++++++++++++++++++++++++++++++++---
+ zebra/zebra_evpn_mh.h |  9 +++++++
+ 6 files changed, 117 insertions(+), 10 deletions(-)
+
+diff --git a/bgpd/bgp_evpn_mh.c b/bgpd/bgp_evpn_mh.c
+index 1ce5ef2646..caa065056d 100644
+--- a/bgpd/bgp_evpn_mh.c
++++ b/bgpd/bgp_evpn_mh.c
+@@ -913,6 +913,29 @@ bgp_evpn_type1_es_route_extcomm_build(struct bgp_evpn_es_frag *es_frag,
+ 					attr, ecommunity_merge(attr->ecommunity,
+ 							       ecom));
+ 		}
++
++		/* L3MH: if no L2 EVIs but ES has L3 VNI, use VRF export RTs */
++		if (!listcount(es_frag->es_evi_frag_list) &&
++		    CHECK_FLAG(es_frag->es->flags, BGP_EVPNES_L3MH) &&
++		    es_frag->es->l3vni) {
++			struct listnode *bgp_node;
++			struct bgp *bgp_vrf;
++
++			for (ALL_LIST_ELEMENTS_RO(bm->bgp, bgp_node,
++						  bgp_vrf)) {
++				if (bgp_vrf->l3vni != es_frag->es->l3vni)
++					continue;
++				for (ALL_LIST_ELEMENTS_RO(
++					     bgp_vrf->vrf_export_rtl, rt_node,
++					     ecom))
++					bgp_attr_set_ecommunity(
++						attr,
++						ecommunity_merge(
++							attr->ecommunity,
++							ecom));
++				break;
++			}
++		}
+ 	}
+ }
+ 
+@@ -1063,7 +1086,8 @@ static void bgp_evpn_ead_es_route_update(struct bgp *bgp,
+ 	build_evpn_type1_prefix(&p, BGP_EVPN_AD_ES_ETH_TAG, &es->esi,
+ 				es->originator_ip);
+ 	for (ALL_LIST_ELEMENTS_RO(es->es_frag_list, node, es_frag)) {
+-		if (!listcount(es_frag->es_evi_frag_list))
++		if (!listcount(es_frag->es_evi_frag_list) &&
++		    !CHECK_FLAG(es->flags, BGP_EVPNES_L3MH))
+ 			continue;
+ 
+ 		p.prefix.ead_addr.frag_id = es_frag->rd_id;
+@@ -2404,7 +2428,7 @@ int bgp_evpn_local_es_del(struct bgp *bgp, esi_t *esi)
+  */
+ int bgp_evpn_local_es_add(struct bgp *bgp, esi_t *esi,
+ 			  struct in_addr originator_ip, bool oper_up,
+-			  uint16_t df_pref, bool bypass)
++			  uint16_t df_pref, bool bypass, vni_t l3vni)
+ {
+ 	struct bgp_evpn_es *es;
+ 	bool new_es = true;
+@@ -2430,6 +2454,18 @@ int bgp_evpn_local_es_add(struct bgp *bgp, esi_t *esi,
+ 	}
+ 	bgp_evpn_es_local_info_set(bgp, es);
+ 
++	/* L3MH: store L3 VNI and set flag if applicable */
++	if (l3vni) {
++		es->l3vni = l3vni;
++		SET_FLAG(es->flags, BGP_EVPNES_L3MH);
++		if (BGP_DEBUG(evpn_mh, EVPN_MH_ES))
++			zlog_debug("es %s l3mh: l3vni %u", es->esi_str,
++				   l3vni);
++	} else {
++		es->l3vni = 0;
++		UNSET_FLAG(es->flags, BGP_EVPNES_L3MH);
++	}
++
+ 	/* import all remote Type-4 routes in the ES table */
+ 	if (new_es)
+ 		bgp_evpn_type4_remote_routes_import(bgp, es,
+diff --git a/bgpd/bgp_evpn_mh.h b/bgpd/bgp_evpn_mh.h
+index fd5ed77586..0a3c0e09f2 100644
+--- a/bgpd/bgp_evpn_mh.h
++++ b/bgpd/bgp_evpn_mh.h
+@@ -76,6 +76,8 @@ struct bgp_evpn_es {
+ #define BGP_EVPNES_CONS_CHECK_PEND (1 << 4)
+ 	/* ES is in LACP bypass mode - don't advertise EAD-ES or ESR */
+ #define BGP_EVPNES_BYPASS (1 << 5)
++	/* ES interface is in a VRF with an L3 VNI (L3MH) */
++#define BGP_EVPNES_L3MH (1 << 6)
+ 	/* bits needed for printing the flags + null */
+ #define BGP_EVPN_FLAG_STR_SZ 7
+ 
+@@ -145,6 +147,9 @@ struct bgp_evpn_es {
+ 	/* preference config for BUM-DF election. advertised via the ESR. */
+ 	uint16_t df_pref;
+ 
++	/* [EVPNES_L3MH] L3 VNI from the ES interface's VRF */
++	vni_t l3vni;
++
+ 	QOBJ_FIELDS;
+ };
+ DECLARE_QOBJ_TYPE(bgp_evpn_es);
+@@ -414,7 +419,7 @@ int bgp_evpn_type4_route_process(struct peer *peer, afi_t afi, safi_t safi,
+ 		uint32_t addpath_id);
+ extern int bgp_evpn_local_es_add(struct bgp *bgp, esi_t *esi,
+ 				 struct in_addr originator_ip, bool oper_up,
+-				 uint16_t df_pref, bool bypass);
++				 uint16_t df_pref, bool bypass, vni_t l3vni);
+ extern int bgp_evpn_local_es_del(struct bgp *bgp, esi_t *esi);
+ extern int bgp_evpn_local_es_evi_add(struct bgp *bgp, esi_t *esi, vni_t vni);
+ extern int bgp_evpn_local_es_evi_del(struct bgp *bgp, esi_t *esi, vni_t vni);
+diff --git a/bgpd/bgp_evpn_vty.c b/bgpd/bgp_evpn_vty.c
+index da6542ad9a..1790d0261c 100644
+--- a/bgpd/bgp_evpn_vty.c
++++ b/bgpd/bgp_evpn_vty.c
+@@ -5996,7 +5996,7 @@ DEFPY_HIDDEN(test_es_add,
+ 		vtep_ip = bgp->router_id;
+ 
+ 		ret = bgp_evpn_local_es_add(bgp, &esi, vtep_ip, oper_up,
+-					    EVPN_MH_DF_PREF_MIN, false);
++					    EVPN_MH_DF_PREF_MIN, false, 0);
+ 		if (ret == -1) {
+ 			vty_out(vty, "%% Failed to add ES\n");
+ 			return CMD_WARNING;
+diff --git a/bgpd/bgp_zebra.c b/bgpd/bgp_zebra.c
+index 0658beffa6..5a94e719c4 100644
+--- a/bgpd/bgp_zebra.c
++++ b/bgpd/bgp_zebra.c
+@@ -3166,6 +3166,7 @@ static int bgp_zebra_process_local_es_add(ZAPI_CALLBACK_ARGS)
+ 	uint8_t active;
+ 	uint8_t bypass;
+ 	uint16_t df_pref;
++	vni_t l3vni;
+ 
+ 	bgp = bgp_lookup_by_vrf_id(vrf_id);
+ 	if (!bgp)
+@@ -3177,18 +3178,19 @@ static int bgp_zebra_process_local_es_add(ZAPI_CALLBACK_ARGS)
+ 	active = stream_getc(s);
+ 	df_pref = stream_getw(s);
+ 	bypass = stream_getc(s);
++	l3vni = stream_getl(s);
+ 
+ 	if (BGP_DEBUG(zebra, ZEBRA))
+ 		zlog_debug(
+-			"Rx add ESI %s originator-ip %pI4 active %u df_pref %u %s",
++			"Rx add ESI %s originator-ip %pI4 active %u df_pref %u %s l3vni %u",
+ 			esi_to_str(&esi, buf, sizeof(buf)), &originator_ip,
+-			active, df_pref, bypass ? "bypass" : "");
++			active, df_pref, bypass ? "bypass" : "", l3vni);
+ 
+ 	frrtrace(5, frr_bgp, evpn_mh_local_es_add_zrecv, &esi, originator_ip,
+ 		 active, bypass, df_pref);
+ 
+ 	bgp_evpn_local_es_add(bgp, &esi, originator_ip, active, df_pref,
+-			      !!bypass);
++			      !!bypass, l3vni);
+ 
+ 	return 0;
+ }
+diff --git a/zebra/zebra_evpn_mh.c b/zebra/zebra_evpn_mh.c
+index 8ff7871150..752443c29f 100644
+--- a/zebra/zebra_evpn_mh.c
++++ b/zebra/zebra_evpn_mh.c
+@@ -1956,6 +1956,7 @@ static int zebra_evpn_es_send_add_to_client(struct zebra_evpn_es *es)
+ 	struct zserv *client;
+ 	struct stream *s;
+ 	uint8_t oper_up;
++	uint32_t l3vni;
+ 	bool bypass;
+ 
+ 	client = zserv_find_client(ZEBRA_ROUTE_BGP, 0);
+@@ -1973,15 +1974,20 @@ static int zebra_evpn_es_send_add_to_client(struct zebra_evpn_es *es)
+ 	stream_putw(s, es->df_pref);
+ 	bypass = !!(es->flags & ZEBRA_EVPNES_BYPASS);
+ 	stream_putc(s, bypass);
++	/* L3MH (draft-mackenzie-bess-evpn-l3mh-proto-07):
++	 * Include L3 VNI so BGP can use VRF export RTs for EAD-ES.
++	 */
++	l3vni = (es->flags & ZEBRA_EVPNES_L3MH) ? es->l3vni : 0;
++	stream_putl(s, l3vni);
+ 
+ 	/* Write packet size. */
+ 	stream_putw_at(s, 0, stream_get_endp(s));
+ 
+ 	if (IS_ZEBRA_DEBUG_EVPN_MH_ES)
+ 		zlog_debug(
+-			"send add local es %s %pI4 active %u df_pref %u%s to %s",
++			"send add local es %s %pI4 active %u df_pref %u%s l3vni %u to %s",
+ 			es->esi_str, &zmh_info->es_originator_ip, oper_up,
+-			es->df_pref, bypass ? " bypass" : "",
++			es->df_pref, bypass ? " bypass" : "", l3vni,
+ 			zebra_route_string(client->proto));
+ 
+ 	client->local_es_add_cnt++;
+@@ -2029,7 +2035,20 @@ static void zebra_evpn_es_re_eval_send_to_client(struct zebra_evpn_es *es,
+ 	if ((es->flags & ZEBRA_EVPNES_LOCAL) &&
+ 			zmh_info->es_originator_ip.s_addr)
+ 		es->flags |= ZEBRA_EVPNES_READY_FOR_BGP;
+-	else
++	else if ((es->flags & ZEBRA_EVPNES_LOCAL) &&
++		 (es->flags & ZEBRA_EVPNES_L3MH) &&
++		 zmh_info->es_originator_ip.s_addr == 0) {
++		/* L3MH: derive originator IP from L3 VNI local VTEP */
++		struct zebra_l3vni *zl3vni;
++
++		zl3vni = zl3vni_from_vrf(es->zif->ifp->vrf->vrf_id);
++		if (zl3vni && zl3vni->local_vtep_ip.s_addr) {
++			zmh_info->es_originator_ip = zl3vni->local_vtep_ip;
++			es->flags |= ZEBRA_EVPNES_READY_FOR_BGP;
++		} else {
++			es->flags &= ~ZEBRA_EVPNES_READY_FOR_BGP;
++		}
++	} else
+ 		es->flags &= ~ZEBRA_EVPNES_READY_FOR_BGP;
+ 
+ 	new_ready = !!(es->flags & ZEBRA_EVPNES_READY_FOR_BGP);
+@@ -2259,6 +2278,38 @@ static void zebra_evpn_mh_on_first_local_es(void)
+ 	zebra_evpn_mh_advertise_svi_mac();
+ }
+ 
++/* L3MH (draft-mackenzie-bess-evpn-l3mh-proto-07):
++ * Check if ES interface belongs to a VRF with an L3 VNI.
++ */
++static void zebra_evpn_es_l3vni_update(struct zebra_evpn_es *es)
++{
++	struct zebra_l3vni *zl3vni;
++	vrf_id_t vrf_id;
++
++	if (!es->zif || !es->zif->ifp || !es->zif->ifp->vrf)
++		return;
++
++	vrf_id = es->zif->ifp->vrf->vrf_id;
++	if (vrf_id == VRF_DEFAULT)
++		return;
++
++	zl3vni = zl3vni_from_vrf(vrf_id);
++	if (!zl3vni || !zl3vni->vni)
++		return;
++
++	es->l3vni = zl3vni->vni;
++	es->flags |= ZEBRA_EVPNES_L3MH;
++
++	if (IS_ZEBRA_DEBUG_EVPN_MH_ES)
++		zlog_debug("es %s l3mh: interface %s in vrf %u with l3vni %u",
++			   es->esi_str, es->zif->ifp->name, vrf_id,
++			   zl3vni->vni);
++
++	/* Re-evaluate readiness for BGP with L3MH path */
++	if (!(es->flags & ZEBRA_EVPNES_READY_FOR_BGP))
++		zebra_evpn_es_re_eval_send_to_client(es, false);
++}
++
+ static void zebra_evpn_es_local_info_set(struct zebra_evpn_es *es,
+ 		struct zebra_if *zif)
+ {
+@@ -2321,6 +2372,10 @@ static void zebra_evpn_es_local_info_set(struct zebra_evpn_es *es,
+ 	 * the zif
+ 	 */
+ 	zebra_evpn_es_setup_evis(es);
++
++	/* L3MH: check if ES interface is in a VRF with L3 VNI */
++	zebra_evpn_es_l3vni_update(es);
++
+ 	/* if there any local macs referring to the ES as dest we
+ 	 * need to clear the contents and start over
+ 	 */
+diff --git a/zebra/zebra_evpn_mh.h b/zebra/zebra_evpn_mh.h
+index f68e2eae60..b981abb805 100644
+--- a/zebra/zebra_evpn_mh.h
++++ b/zebra/zebra_evpn_mh.h
+@@ -52,6 +52,10 @@ struct zebra_evpn_es {
+  * when the associated host bond goes into LACP bypass
+  */
+ #define ZEBRA_EVPNES_BYPASS (1 << 7)
++/* L3 Multi-Homing: ES interface is a routed L3 interface in a VRF
++ * with an L3 VNI (draft-mackenzie-bess-evpn-l3mh-proto-07)
++ */
++#define ZEBRA_EVPNES_L3MH (1 << 8)
+ 
+ 	/* memory used for adding the es to zmh_info->es_rb_tree */
+ 	RB_ENTRY(zebra_evpn_es) rb_node;
+@@ -87,6 +91,11 @@ struct zebra_evpn_es {
+ 	 */
+ #define ZEBRA_EVPN_MH_DF_DELAY_TIME 3 /* seconds */
+ 	struct event *df_delay_timer;
++
++	/* [EVPNES_L3MH] L3 VNI from the ES interface's VRF.
++	 * Used for draft-mackenzie-bess-evpn-l3mh-proto-07.
++	 */
++	vni_t l3vni;
+ };
+ RB_HEAD(zebra_es_rb_head, zebra_evpn_es);
+ RB_PROTOTYPE(zebra_es_rb_head, zebra_evpn_es, rb_node, zebra_es_rb_cmp);
+-- 
+2.43.0
+
