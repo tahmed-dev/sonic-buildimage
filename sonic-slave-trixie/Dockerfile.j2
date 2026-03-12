@@ -494,7 +494,9 @@ RUN apt-get update && apt-get install -y eatmydata && eatmydata apt-get install 
         meson \
         python3-pyelftools \
         hwdata \
-        libzip-dev
+        libzip-dev \
+# For debugging
+        gdbserver
 
 {%- if CONFIGURED_ARCH != "arm64" and CONFIGURED_ARCH != "armhf" %}
 RUN eatmydata apt-get install -y \
@@ -629,8 +631,9 @@ RUN cd /usr/src/gtest && CXX=$CROSS_CXX CC=$CROSS_CC cmake . && make -C /usr/src
 RUN cd /usr/src/gtest && cmake . && make -C /usr/src/gtest
 {%- endif %}
 
-# mkdir: cannot create directory '/var/run/sshd': File exists
-#RUN mkdir /var/run/sshd
+# Configure SSH for root access
+RUN (mkdir -p /var/run/sshd || true) && \
+    sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
 EXPOSE 22
 
 # Install docker engine 24 inside docker and enable experimental feature

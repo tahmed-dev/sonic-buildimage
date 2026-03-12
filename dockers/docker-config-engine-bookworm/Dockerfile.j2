@@ -7,7 +7,11 @@ FROM $BASE AS base
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update         && \
-    apt-get install -y        \
+{%- if INSTALL_DEBUG_TOOLS == "y" %}
+    aptitude -y install       \
+{%- else %}
+    apt-get -y install        \
+{%- endif %}
         apt-utils             \
         build-essential       \
         python3-dev           \
