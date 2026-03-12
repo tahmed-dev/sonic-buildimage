@@ -504,7 +504,12 @@ sudo sed -i 's/^#ListenAddress 0.0.0.0/ListenAddress 0.0.0.0/' $FILESYSTEM_ROOT/
 sudo sed -i 's/^#ListenAddress ::/ListenAddress ::/' $FILESYSTEM_ROOT/etc/ssh/sshd_config
 
 # Use libpam_systemd, since that's now needed for limiting login sessions
-sudo LANG=C DEBIAN_FRONTEND=noninteractive chroot $FILESYSTEM_ROOT apt-get -y install libpam-systemd
+sudo LANG=C DEBIAN_FRONTEND=noninteractive chroot $FILESYSTEM_ROOT apt-get -y autoremove
+sudo LANG=C DEBIAN_FRONTEND=noninteractive chroot $FILESYSTEM_ROOT apt-get -y install \
+    libpam-systemd \
+    libcryptsetup12 \
+    libtss2-rc0t64 \
+    dbus-user-session
 
 ## Config rsyslog
 sudo augtool -r $FILESYSTEM_ROOT --autosave "
@@ -671,7 +676,6 @@ then
     sudo mkdir -p $FILESYSTEM_ROOT/src
     sudo cp $DEBUG_SRC_ARCHIVE_FILE $FILESYSTEM_ROOT/src/
     sudo mkdir -p $FILESYSTEM_ROOT/debug
-
 fi
 
 ## Set FIPS runtime default option
