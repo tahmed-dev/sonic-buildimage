@@ -92,10 +92,17 @@ setup(
     ],
     setup_requires= [
         'pytest-runner',
-        'wheel'
+        'wheel',
     ],
+    extras_require={
+        'testing': [
+            'pytest',
+            'pytest-xdist',
+        ],
+    },
     tests_require=[
         'pytest',
+        'pytest-xdist',
     ],
     classifiers = [
         'Intended Audience :: Developers',

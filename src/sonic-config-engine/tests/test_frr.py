@@ -13,7 +13,7 @@ class TestCfgGen(TestCase):
         self.script_file = [utils.PYTHON_INTERPRETTER, os.path.join(self.test_dir, '..', 'sonic-cfggen')]
         self.t0_minigraph = os.path.join(self.test_dir, 't0-sample-graph.xml')
         self.t0_port_config = os.path.join(self.test_dir, 't0-sample-port-config.ini')
-        self.output_file = os.path.join(self.test_dir, 'output')
+        self.output_file = os.path.join(self.test_dir, 'output.{}'.format(os.getpid()))
 
     def tearDown(self):
         try:
