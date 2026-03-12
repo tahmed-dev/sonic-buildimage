@@ -1,0 +1,34 @@
+From 9e9e38c7d23e04c7c537cc167dedd57e3422d7b8 Mon Sep 17 00:00:00 2001
+From: Tamer Ahmed <tamerahmed@microsoft.com>
+Date: Fri, 27 Feb 2026 18:13:13 -0800
+Subject: [PATCH] zebra: fix netlink_br_port_msg_encoder signature (SIGSEGV
+ fix)
+
+Remove uint16_t cmd parameter and const qualifier from ctx to match
+the kernel_netlink msg_encoder callback signature.  The mismatched
+prototype caused argument misalignment leading to SIGSEGV when
+programming IFLA_BRPORT_BACKUP_NHID.
+
+Fixes: 27c49a11b9 ("zebra: Implement DPLANE_OP_BR_PORT_UPDATE")
+Signed-off-by: Tamer Ahmed <tamerahmed@microsoft.com>
+---
+ zebra/if_netlink.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/zebra/if_netlink.c b/zebra/if_netlink.c
+index 5c0a234122..301db89654 100644
+--- a/zebra/if_netlink.c
++++ b/zebra/if_netlink.c
+@@ -1046,8 +1046,7 @@ netlink_put_intf_update_msg(struct nl_batch *bth, struct zebra_dplane_ctx *ctx)
+  * IFLA_BRPORT_BACKUP_NHID).  Used to publish the ES NHG→port mapping
+  * into the kernel so that fdbsyncd can discover it.
+  */
+-static ssize_t netlink_br_port_msg_encoder(uint16_t cmd,
+-					   const struct zebra_dplane_ctx *ctx,
++static ssize_t netlink_br_port_msg_encoder(struct zebra_dplane_ctx *ctx,
+ 					   void *buf, size_t buflen)
+ {
+ 	struct {
+-- 
+2.43.0
+

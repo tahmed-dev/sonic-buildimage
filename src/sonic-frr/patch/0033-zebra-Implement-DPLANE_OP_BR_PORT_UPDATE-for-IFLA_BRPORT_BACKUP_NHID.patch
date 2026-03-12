@@ -1,0 +1,147 @@
+From 27c49a11b9e83fe313ece99bd028d47fc7f5c804 Mon Sep 17 00:00:00 2001
+From: Tamer Ahmed <tamerahmed@microsoft.com>
+Date: Fri, 27 Feb 2026 16:33:57 -0800
+Subject: [PATCH] zebra: Implement DPLANE_OP_BR_PORT_UPDATE for
+ IFLA_BRPORT_BACKUP_NHID
+
+Enable the kernel dataplane provider to send RTM_SETLINK with
+IFLA_BRPORT_BACKUP_NHID when zebra processes bridge port updates
+for EVPN multi-homing ES nexthop groups. Previously this operation
+was a no-op in kernel_netlink.c.
+
+This allows fdbsyncd to discover NHG-to-ES-port mappings via
+standard netlink bridge port events.
+
+Changes:
+- kernel_netlink.c: Route DPLANE_OP_BR_PORT_UPDATE to new handler
+- if_netlink.c: Add netlink_br_port_msg_encoder() and
+  netlink_put_br_port_update_msg()
+- if_netlink.h: Declare new function
+- include/linux/if_link.h: Add missing BRPORT attrs up to
+  IFLA_BRPORT_BACKUP_NHID(44)
+
+Signed-off-by: Tamer Ahmed <tamerahmed@microsoft.com>
+---
+ include/linux/if_link.h | 10 +++++++++
+ zebra/if_netlink.c      | 50 +++++++++++++++++++++++++++++++++++++++++
+ zebra/if_netlink.h      |  4 ++++
+ zebra/kernel_netlink.c  |  4 +++-
+ 4 files changed, 67 insertions(+), 1 deletion(-)
+
+diff --git a/include/linux/if_link.h b/include/linux/if_link.h
+index 53892303ba..cfa3e36095 100644
+--- a/include/linux/if_link.h
++++ b/include/linux/if_link.h
+@@ -352,6 +352,16 @@ enum {
+ 	IFLA_BRPORT_NEIGH_SUPPRESS,
+ 	IFLA_BRPORT_ISOLATED,
+ 	IFLA_BRPORT_BACKUP_PORT,
++	IFLA_BRPORT_MRP_RING_OPEN,
++	IFLA_BRPORT_MRP_IN_OPEN,
++	IFLA_BRPORT_MCAST_EHT_HOSTS_LIMIT,
++	IFLA_BRPORT_MCAST_EHT_HOSTS_CNT,
++	IFLA_BRPORT_LOCKED,
++	IFLA_BRPORT_MAB,
++	IFLA_BRPORT_MCAST_N_GROUPS,
++	IFLA_BRPORT_MCAST_MAX_GROUPS,
++	IFLA_BRPORT_NEIGH_VLAN_SUPPRESS,
++	IFLA_BRPORT_BACKUP_NHID,
+ 	IFLA_BRPORT_PEER_LINK = 60, /* MLAG peer link */
+ 	IFLA_BRPORT_DUAL_LINK,  /* MLAG Dual Connected link */
+ 	IFLA_BRPORT_GROUP_FWD_MASKHI,
+diff --git a/zebra/if_netlink.c b/zebra/if_netlink.c
+index a214914171..5c0a234122 100644
+--- a/zebra/if_netlink.c
++++ b/zebra/if_netlink.c
+@@ -1041,6 +1041,56 @@ netlink_put_intf_update_msg(struct nl_batch *bth, struct zebra_dplane_ctx *ctx)
+ 	return netlink_batch_add_msg(bth, ctx, netlink_intf_msg_encoder, false);
+ }
+ 
++/*
++ * Encode a bridge port update (RTM_SETLINK with IFLA_PROTINFO containing
++ * IFLA_BRPORT_BACKUP_NHID).  Used to publish the ES NHG→port mapping
++ * into the kernel so that fdbsyncd can discover it.
++ */
++static ssize_t netlink_br_port_msg_encoder(uint16_t cmd,
++					   const struct zebra_dplane_ctx *ctx,
++					   void *buf, size_t buflen)
++{
++	struct {
++		struct nlmsghdr n;
++		struct ifinfomsg ifi;
++		char buf[0];
++	} *req = buf;
++
++	if (buflen < sizeof(*req))
++		return 0;
++
++	memset(req, 0, sizeof(*req));
++
++	req->n.nlmsg_len = NLMSG_LENGTH(sizeof(struct ifinfomsg));
++	req->n.nlmsg_flags = NLM_F_REQUEST;
++	req->n.nlmsg_type = RTM_SETLINK;
++	req->ifi.ifi_family = AF_BRIDGE;
++	req->ifi.ifi_index = dplane_ctx_get_ifindex(ctx);
++
++	/* Nest IFLA_PROTINFO for bridge port attributes */
++	struct rtattr *nest = nl_attr_nest(&req->n, buflen,
++					   IFLA_PROTINFO | NLA_F_NESTED);
++	if (!nest)
++		return 0;
++
++	uint32_t backup_nhg_id = dplane_ctx_get_br_port_backup_nhg_id(ctx);
++	if (!nl_attr_put32(&req->n, buflen, IFLA_BRPORT_BACKUP_NHID,
++			   backup_nhg_id))
++		return 0;
++
++	nl_attr_nest_end(&req->n, nest);
++
++	return NLMSG_ALIGN(req->n.nlmsg_len);
++}
++
++enum netlink_msg_status
++netlink_put_br_port_update_msg(struct nl_batch *bth,
++			       struct zebra_dplane_ctx *ctx)
++{
++	return netlink_batch_add_msg(bth, ctx, netlink_br_port_msg_encoder,
++				     false);
++}
++
+ /*
+  * Parse and validate an incoming interface address change message,
+  * generating a dplane context object.
+diff --git a/zebra/if_netlink.h b/zebra/if_netlink.h
+index dc1f71cb77..8fc852359b 100644
+--- a/zebra/if_netlink.h
++++ b/zebra/if_netlink.h
+@@ -39,6 +39,10 @@ extern int netlink_tunneldump_read(struct zebra_ns *zns);
+ extern enum netlink_msg_status
+ netlink_put_intf_update_msg(struct nl_batch *bth, struct zebra_dplane_ctx *ctx);
+ 
++extern enum netlink_msg_status
++netlink_put_br_port_update_msg(struct nl_batch *bth,
++			       struct zebra_dplane_ctx *ctx);
++
+ #ifdef __cplusplus
+ }
+ #endif
+diff --git a/zebra/kernel_netlink.c b/zebra/kernel_netlink.c
+index 22c62aea5c..adb6309779 100644
+--- a/zebra/kernel_netlink.c
++++ b/zebra/kernel_netlink.c
+@@ -1616,9 +1616,11 @@ static enum netlink_msg_status nl_put_msg(struct nl_batch *bth,
+ 	case DPLANE_OP_SYS_ROUTE_DELETE:
+ 	case DPLANE_OP_ROUTE_NOTIFY:
+ 	case DPLANE_OP_LSP_NOTIFY:
+-	case DPLANE_OP_BR_PORT_UPDATE:
+ 		return FRR_NETLINK_SUCCESS;
+ 
++	case DPLANE_OP_BR_PORT_UPDATE:
++		return netlink_put_br_port_update_msg(bth, ctx);
++
+ 	case DPLANE_OP_IPTABLE_ADD:
+ 	case DPLANE_OP_IPTABLE_DELETE:
+ 	case DPLANE_OP_IPSET_ADD:
+-- 
+2.43.0
+
