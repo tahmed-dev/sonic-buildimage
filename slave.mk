@@ -1504,6 +1504,7 @@ $(addprefix $(TARGET_PATH)/, $(SONIC_INSTALLERS)) : $(TARGET_PATH)/% : \
 
 	$(HEADER)
 	# Ensure platform_asic exists (may be skipped when sonic-device-data is cached)
+	echo "$(patsubst %-$(CONFIGURED_ARCH),%,$(CONFIGURED_PLATFORM))" > device/virtual/x86_64-kvm_x86_64-r0/platform_asic
 	# Pass initramfs and linux kernel explicitly. They are used for all platforms
 	export debs_path="$(IMAGE_DISTRO_DEBS_PATH)"
 	export files_path="$(FILES_PATH)"
