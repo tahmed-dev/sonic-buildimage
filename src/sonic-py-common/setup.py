@@ -45,9 +45,15 @@ setup(
         'wheel'
     ],
     tests_require=[
+        'pytest-xdist',
         'pytest',
         'mock==3.0.5' # For python 2. Version >=4.0.0 drops support for py2
     ],
+    extras_require={
+        'testing': [
+            'pytest-xdist',
+        ],
+    },
     entry_points={
         'console_scripts': [
             'sonic-db-load = sonic_py_common.sonic_db_dump_load:sonic_db_dump_load',
