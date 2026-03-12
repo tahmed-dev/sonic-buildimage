@@ -7,7 +7,9 @@
 {% if CONFIG_DB__DEVICE_METADATA['localhost']['type'] == 'ToRRouter' %}
     neighbor PEER_V4 allowas-in 1
 {% elif CONFIG_DB__DEVICE_METADATA['localhost']['type'] == 'LeafRouter' %}
-{%   if CONFIG_DB__BGP_BBR['status'] == 'enabled' %}
+{%   if CONFIG_DB__BGP_BBR is defined and CONFIG_DB__BGP_BBR['status'] == 'enabled' %}
+    neighbor PEER_V4 allowas-in 1
+{%   elif CONFIG_DB__VXLAN_EVPN_NVO is defined and CONFIG_DB__VXLAN_EVPN_NVO | length > 0 %}
     neighbor PEER_V4 allowas-in 1
 {%   endif %}
 {% endif %}
@@ -22,7 +24,9 @@
 {% if CONFIG_DB__DEVICE_METADATA['localhost']['type'] == 'ToRRouter' %}
     neighbor PEER_V6 allowas-in 1
 {% elif CONFIG_DB__DEVICE_METADATA['localhost']['type'] == 'LeafRouter' %}
-{%   if CONFIG_DB__BGP_BBR['status'] == 'enabled' %}
+{%   if CONFIG_DB__BGP_BBR is defined and CONFIG_DB__BGP_BBR['status'] == 'enabled' %}
+    neighbor PEER_V6 allowas-in 1
+{%   elif CONFIG_DB__VXLAN_EVPN_NVO is defined and CONFIG_DB__VXLAN_EVPN_NVO | length > 0 %}
     neighbor PEER_V6 allowas-in 1
 {%   endif %}
 {% endif %}
