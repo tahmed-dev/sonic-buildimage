@@ -1,0 +1,204 @@
+From 5cd674f6ecf9a74365863933830207edac681f5a Mon Sep 17 00:00:00 2001
+From: Tamer Ahmed <tamerahmed@microsoft.com>
+Date: Fri, 27 Feb 2026 17:49:11 -0800
+Subject: [PATCH] zebra/bgpd: Add ZEBRA_ES_VTEP_REPLAY_REQ for
+ post-startup-delay ES recovery
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+When FRR's EVPN MH startup-delay timer is running, zebra discards
+remote ES VTEP notifications from bgpd (NHG add then immediate delete).
+After the delay expires, bgpd has no reason to re-send these — leaving
+ES VTEPs permanently empty and backup_nhid unprogrammed.
+
+Add a new ZAPI message ZEBRA_ES_VTEP_REPLAY_REQ that zebra sends to
+bgpd when the startup-delay timer expires.  bgpd handles it by walking
+all ES entries and re-sending ZEBRA_REMOTE_ES_VTEP_ADD for every active
+VTEP.  This ensures ES NHGs and IFLA_BRPORT_BACKUP_NHID are reliably
+programmed after boot regardless of timing between BGP convergence and
+the startup-delay window.
+
+Changes:
+  - lib/zclient.h: new ZEBRA_ES_VTEP_REPLAY_REQ enum value
+  - lib/log.c: command string for new message type
+  - zebra/zebra_evpn_mh.c: send replay request on startup-delay expiry
+  - bgpd/bgp_evpn_mh.[ch]: bgp_evpn_es_vtep_replay() walks ES RB tree
+  - bgpd/bgp_zebra.c: register handler for new ZAPI message
+Signed-off-by: Tamer Ahmed <tamerahmed@microsoft.com>
+---
+ bgpd/bgp_evpn_mh.c    | 34 ++++++++++++++++++++++++++++++++++
+ bgpd/bgp_evpn_mh.h    |  1 +
+ bgpd/bgp_zebra.c      | 11 +++++++++++
+ lib/log.c             |  3 ++-
+ lib/zclient.h         |  1 +
+ zebra/zebra_evpn_mh.c | 34 ++++++++++++++++++++++++++++++++++
+ 6 files changed, 83 insertions(+), 1 deletion(-)
+
+diff --git a/bgpd/bgp_evpn_mh.c b/bgpd/bgp_evpn_mh.c
+index 1ce5ef2646..fa41b26ad3 100644
+--- a/bgpd/bgp_evpn_mh.c
++++ b/bgpd/bgp_evpn_mh.c
+@@ -1434,6 +1434,40 @@ bgp_zebra_send_remote_es_vtep(struct bgp *bgp, struct bgp_evpn_es_vtep *es_vtep,
+ 	return zclient_send_message(bgp_zclient);
+ }
+ 
++/* Replay all active remote ES VTEPs to zebra.  Called when zebra sends
++ * ZEBRA_ES_VTEP_REPLAY_REQ after its startup-delay timer expires —
++ * during that window zebra may have discarded the original notifications.
++ */
++void bgp_evpn_es_vtep_replay(void)
++{
++	struct bgp_evpn_es *es;
++	struct bgp_evpn_es_vtep *es_vtep;
++	struct listnode *node;
++	struct bgp *bgp;
++
++	bgp = bgp_get_evpn();
++	if (!bgp)
++		return;
++
++	if (BGP_DEBUG(evpn_mh, EVPN_MH_ES))
++		zlog_debug("ES VTEP replay request from zebra — resending active VTEPs");
++
++	RB_FOREACH (es, bgp_es_rb_head, &bgp_mh_info->es_rb_tree) {
++		for (ALL_LIST_ELEMENTS_RO(es->es_vtep_list, node, es_vtep)) {
++			if (!CHECK_FLAG(es_vtep->flags, BGP_EVPNES_VTEP_ACTIVE))
++				continue;
++
++			if (BGP_DEBUG(evpn_mh, EVPN_MH_ES))
++				zlog_debug(
++					"  replay ES %s VTEP %pI4",
++					es->esi_str, &es_vtep->vtep_ip);
++
++			bgp_zebra_send_remote_es_vtep(bgp, es_vtep,
++						      true /* add */);
++		}
++	}
++}
++
+ static enum zclient_send_status bgp_evpn_es_vtep_re_eval_active(
+ 	struct bgp *bgp, struct bgp_evpn_es_vtep *es_vtep, bool param_change)
+ {
+diff --git a/bgpd/bgp_evpn_mh.h b/bgpd/bgp_evpn_mh.h
+index fd5ed77586..5f312c550f 100644
+--- a/bgpd/bgp_evpn_mh.h
++++ b/bgpd/bgp_evpn_mh.h
+@@ -424,6 +424,7 @@ bgp_evpn_remote_es_evi_add(struct bgp *bgp, struct bgpevpn *vpn,
+ extern enum zclient_send_status
+ bgp_evpn_remote_es_evi_del(struct bgp *bgp, struct bgpevpn *vpn,
+ 			   const struct prefix_evpn *p);
++extern void bgp_evpn_es_vtep_replay(void);
+ extern void bgp_evpn_mh_init(void);
+ extern void bgp_evpn_mh_finish(void);
+ void bgp_evpn_vni_es_init(struct bgpevpn *vpn);
+diff --git a/bgpd/bgp_zebra.c b/bgpd/bgp_zebra.c
+index 0658beffa6..38b6d964e6 100644
+--- a/bgpd/bgp_zebra.c
++++ b/bgpd/bgp_zebra.c
+@@ -3253,6 +3253,16 @@ static int bgp_zebra_process_local_es_evi(ZAPI_CALLBACK_ARGS)
+ 	return 0;
+ }
+ 
++static int bgp_zebra_process_es_vtep_replay(ZAPI_CALLBACK_ARGS)
++{
++	if (BGP_DEBUG(zebra, ZEBRA))
++		zlog_debug("Rx ES VTEP replay request from zebra");
++
++	bgp_evpn_es_vtep_replay();
++
++	return 0;
++}
++
+ static int bgp_zebra_process_local_l3vni(ZAPI_CALLBACK_ARGS)
+ {
+ 	int filter = 0;
+@@ -3998,6 +4008,7 @@ static zclient_handler *const bgp_handlers[] = {
+ 	[ZEBRA_VNI_ADD] = bgp_zebra_process_local_vni,
+ 	[ZEBRA_LOCAL_ES_EVI_ADD] = bgp_zebra_process_local_es_evi,
+ 	[ZEBRA_LOCAL_ES_EVI_DEL] = bgp_zebra_process_local_es_evi,
++	[ZEBRA_ES_VTEP_REPLAY_REQ] = bgp_zebra_process_es_vtep_replay,
+ 	[ZEBRA_VNI_DEL] = bgp_zebra_process_local_vni,
+ 	[ZEBRA_MACIP_ADD] = bgp_zebra_process_local_macip,
+ 	[ZEBRA_MACIP_DEL] = bgp_zebra_process_local_macip,
+diff --git a/lib/log.c b/lib/log.c
+index c1ffed004e..fc4e0b1e30 100644
+--- a/lib/log.c
++++ b/lib/log.c
+@@ -464,7 +464,8 @@ static const struct zebra_desc_table command_types[] = {
+ 	DESC_ENTRY(ZEBRA_TC_FILTER_ADD),
+ 	DESC_ENTRY(ZEBRA_TC_FILTER_DELETE),
+ 	DESC_ENTRY(ZEBRA_OPAQUE_NOTIFY),
+-	DESC_ENTRY(ZEBRA_SRV6_SID_NOTIFY)
++	DESC_ENTRY(ZEBRA_SRV6_SID_NOTIFY),
++	DESC_ENTRY(ZEBRA_ES_VTEP_REPLAY_REQ)
+ };
+ #undef DESC_ENTRY
+ 
+diff --git a/lib/zclient.h b/lib/zclient.h
+index eba5bb6612..e680f43848 100644
+--- a/lib/zclient.h
++++ b/lib/zclient.h
+@@ -238,6 +238,7 @@ typedef enum {
+ 	ZEBRA_TC_FILTER_DELETE,
+ 	ZEBRA_OPAQUE_NOTIFY,
+ 	ZEBRA_SRV6_SID_NOTIFY,
++	ZEBRA_ES_VTEP_REPLAY_REQ,
+ } zebra_message_types_t;
+ /* Zebra message types. Please update the corresponding
+  * command_types array with any changes!
+diff --git a/zebra/zebra_evpn_mh.c b/zebra/zebra_evpn_mh.c
+index ade4ba8c56..4196a76bf0 100644
+--- a/zebra/zebra_evpn_mh.c
++++ b/zebra/zebra_evpn_mh.c
+@@ -3738,6 +3738,35 @@ void zebra_evpn_mh_uplink_oper_update(struct zebra_if *zif)
+ 				       new_protodown);
+ }
+ 
++/* Ask bgpd to replay all active remote ES VTEPs.  During the startup-delay
++ * window zebra may have received (and then discarded) remote-ES-VTEP
++ * notifications from bgpd.  Once the delay expires those VTEPs are needed
++ * but bgpd has no reason to re-send them.  This small ZAPI message triggers
++ * bgpd to walk its ES VTEP list and re-advertise every active entry.
++ */
++static void zebra_evpn_es_vtep_replay_request(void)
++{
++	struct zserv *client;
++	struct stream *s;
++
++	client = zserv_find_client(ZEBRA_ROUTE_BGP, 0);
++	if (!client)
++		return;
++
++	s = stream_new(ZEBRA_SMALL_PACKET_SIZE);
++
++	zclient_create_header(s, ZEBRA_ES_VTEP_REPLAY_REQ,
++			      zebra_vrf_get_evpn_id());
++
++	/* Write packet size. */
++	stream_putw_at(s, 0, stream_get_endp(s));
++
++	if (IS_ZEBRA_DEBUG_EVPN_MH_ES)
++		zlog_debug("send ES VTEP replay request to bgpd");
++
++	zserv_send_message(client, s);
++}
++
+ static void zebra_evpn_mh_startup_delay_exp_cb(struct event *t)
+ {
+ 	if (IS_ZEBRA_DEBUG_EVPN_MH_ES)
+@@ -3745,6 +3774,11 @@ static void zebra_evpn_mh_startup_delay_exp_cb(struct event *t)
+ 
+ 	zebra_evpn_mh_update_protodown(ZEBRA_PROTODOWN_EVPN_STARTUP_DELAY,
+ 				       false /* set */);
++
++	/* Request bgpd to replay remote ES VTEPs that may have been lost
++	 * during the startup-delay window.
++	 */
++	zebra_evpn_es_vtep_replay_request();
+ }
+ 
+ static void zebra_evpn_mh_startup_delay_timer_start(const char *rc)
+-- 
+2.43.0
+
