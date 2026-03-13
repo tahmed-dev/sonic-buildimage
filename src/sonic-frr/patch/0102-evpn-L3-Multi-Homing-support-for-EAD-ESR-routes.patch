@@ -183,14 +183,19 @@ index 8ff7871150..752443c29f 100644
  	bool bypass;
  
  	client = zserv_find_client(ZEBRA_ROUTE_BGP, 0);
-@@ -1973,15 +1974,20 @@ static int zebra_evpn_es_send_add_to_client(struct zebra_evpn_es *es)
+@@ -1973,15 +1974,25 @@ static int zebra_evpn_es_send_add_to_client(struct zebra_evpn_es *es)
  	stream_putw(s, es->df_pref);
  	bypass = !!(es->flags & ZEBRA_EVPNES_BYPASS);
  	stream_putc(s, bypass);
 +	/* L3MH (draft-mackenzie-bess-evpn-l3mh-proto-07):
 +	 * Include L3 VNI so BGP can use VRF export RTs for EAD-ES.
++	 * When vtep-source-ip provides originator (no real L3 VNI),
++	 * send sentinel l3vni=1 to trigger BGP_EVPNES_L3MH flag.
 +	 */
-+	l3vni = (es->flags & ZEBRA_EVPNES_L3MH) ? es->l3vni : 0;
++	if (es->flags & ZEBRA_EVPNES_L3MH)
++		l3vni = es->l3vni ? es->l3vni : 1;
++	else
++		l3vni = 0;
 +	stream_putl(s, l3vni);
  
  	/* Write packet size. */
@@ -206,7 +211,7 @@ index 8ff7871150..752443c29f 100644
  			zebra_route_string(client->proto));
  
  	client->local_es_add_cnt++;
-@@ -2029,7 +2035,20 @@ static void zebra_evpn_es_re_eval_send_to_client(struct zebra_evpn_es *es,
+@@ -2029,7 +2040,20 @@ static void zebra_evpn_es_re_eval_send_to_client(struct zebra_evpn_es *es,
  	if ((es->flags & ZEBRA_EVPNES_LOCAL) &&
  			zmh_info->es_originator_ip.s_addr)
  		es->flags |= ZEBRA_EVPNES_READY_FOR_BGP;
@@ -228,7 +233,7 @@ index 8ff7871150..752443c29f 100644
  		es->flags &= ~ZEBRA_EVPNES_READY_FOR_BGP;
  
  	new_ready = !!(es->flags & ZEBRA_EVPNES_READY_FOR_BGP);
-@@ -2259,6 +2278,38 @@ static void zebra_evpn_mh_on_first_local_es(void)
+@@ -2259,6 +2283,38 @@ static void zebra_evpn_mh_on_first_local_es(void)
  	zebra_evpn_mh_advertise_svi_mac();
  }
  
@@ -267,7 +272,7 @@ index 8ff7871150..752443c29f 100644
  static void zebra_evpn_es_local_info_set(struct zebra_evpn_es *es,
  		struct zebra_if *zif)
  {
-@@ -2321,6 +2372,10 @@ static void zebra_evpn_es_local_info_set(struct zebra_evpn_es *es,
+@@ -2321,6 +2377,10 @@ static void zebra_evpn_es_local_info_set(struct zebra_evpn_es *es,
  	 * the zif
  	 */
  	zebra_evpn_es_setup_evis(es);

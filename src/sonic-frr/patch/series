@@ -35,3 +35,5 @@
 0034-zebra-bgpd-Add-ZEBRA_ES_VTEP_REPLAY_REQ-for-post-startup-delay-ES-recovery.patch
 0035-zebra-fix-netlink_br_port_msg_encoder-signature-SIGSEGV-fix.patch
 0102-evpn-L3-Multi-Homing-support-for-EAD-ESR-routes.patch
+0103-zebra-L3MH-vtep-source-ip-CLI-and-L3-VNI-re-eval.patch
+0104-bgpd-L3MH-activate-ES-VTEP-on-Type-4-ESR.patch

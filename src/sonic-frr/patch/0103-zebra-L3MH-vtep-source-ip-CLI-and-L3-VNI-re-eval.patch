@@ -1,0 +1,190 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tamer Ahmed <tamerahmed@microsoft.com>
+Date: Sun, 8 Mar 2026 13:50:00 -0700
+Subject: [PATCH] zebra: L3MH vtep-source-ip CLI and startup sequencing fix
+
+Add evpn mh vtep-source-ip A.B.C.D CLI for explicit VTEP source IP
+in L3 Multi-Homing (draft-ietf-bess-evpn-l3mh-proto). Fixes startup
+sequencing so ES becomes Ready for BGP on config load without L2 VNI.
+
+When vtep-source-ip is configured, set ZEBRA_EVPNES_L3MH on all local
+ES regardless of how originator_ip was derived (L2 VNI or vtep-source-ip).
+Track L3MH flag changes separately from ready state to ensure re-send
+to BGP when L3MH is first enabled on an already-ready ES.
+
+Signed-off-by: Tamer Ahmed <tamerahmed@microsoft.com>
+---
+diff --git a/zebra/zebra_evpn_mh.c b/zebra/zebra_evpn_mh.c
+index d164524a36..4b07683661 100644
+--- a/zebra/zebra_evpn_mh.c
++++ b/zebra/zebra_evpn_mh.c
+@@ -2034,32 +2034,41 @@ static void zebra_evpn_es_re_eval_send_to_client(struct zebra_evpn_es *es,
+ {
+ 	bool old_ready;
+ 	bool new_ready;
++	bool old_l3mh;
++	bool new_l3mh;
+ 	struct listnode *node;
+ 	struct zebra_evpn_es_evi *es_evi;
+ 
+ 	old_ready = !!(es->flags & ZEBRA_EVPNES_READY_FOR_BGP);
++	old_l3mh = !!(es->flags & ZEBRA_EVPNES_L3MH);
+ 
+ 	if ((es->flags & ZEBRA_EVPNES_LOCAL) &&
+ 			zmh_info->es_originator_ip.s_addr)
+ 		es->flags |= ZEBRA_EVPNES_READY_FOR_BGP;
+ 	else if ((es->flags & ZEBRA_EVPNES_LOCAL) &&
+-		 (es->flags & ZEBRA_EVPNES_L3MH) &&
+-		 zmh_info->es_originator_ip.s_addr == 0) {
+-		/* L3MH: derive originator IP from L3 VNI local VTEP */
+-		struct zebra_l3vni *zl3vni;
+-
+-		zl3vni = zl3vni_from_vrf(es->zif->ifp->vrf->vrf_id);
+-		if (zl3vni && zl3vni->local_vtep_ip.s_addr) {
+-			zmh_info->es_originator_ip = zl3vni->local_vtep_ip;
+-			es->flags |= ZEBRA_EVPNES_READY_FOR_BGP;
+-		} else {
+-			es->flags &= ~ZEBRA_EVPNES_READY_FOR_BGP;
+-		}
++		 zmh_info->es_originator_ip.s_addr == 0 &&
++		 zmh_info->vtep_source_ip.s_addr) {
++		/* L3MH (draft-ietf-bess-evpn-l3mh-proto): vtep-source-ip
++		 * provides explicit originator IP when no L2 VNI exists.
++		 */
++		zmh_info->es_originator_ip = zmh_info->vtep_source_ip;
++		es->flags |= ZEBRA_EVPNES_READY_FOR_BGP;
+ 	} else
+ 		es->flags &= ~ZEBRA_EVPNES_READY_FOR_BGP;
+ 
++	/* L3MH: set flag whenever vtep-source-ip is configured,
++	 * even if originator_ip was already set from L2 VNI path.
++	 * This ensures zebra sends l3vni to BGP for Type-1 generation.
++	 */
++	if ((es->flags & ZEBRA_EVPNES_LOCAL) &&
++	    zmh_info->vtep_source_ip.s_addr)
++		es->flags |= ZEBRA_EVPNES_L3MH;
++
+ 	new_ready = !!(es->flags & ZEBRA_EVPNES_READY_FOR_BGP);
+-	if (old_ready == new_ready)
++	new_l3mh = !!(es->flags & ZEBRA_EVPNES_L3MH);
++
++	/* Re-send if readiness or L3MH state changed */
++	if (old_ready == new_ready && old_l3mh == new_l3mh)
+ 		return;
+ 
+ 	if (new_ready)
+@@ -2353,8 +2362,12 @@ static void zebra_evpn_es_local_info_set(struct zebra_evpn_es *es,
+ 	 */
+ 	if (!zmh_info->es_base_evpn)
+ 		zebra_evpn_es_get_one_base_evpn();
+-	else
+-		/* send notification to bgp */
++
++	/* Send notification to bgp. In L3MH (no L2 VNI) es_base_evpn
++	 * will remain NULL but vtep_source_ip provides the originator IP.
++	 * Always re-eval so the ES is sent to BGP if ready.
++	 */
++	if (zmh_info->es_base_evpn || zmh_info->vtep_source_ip.s_addr)
+ 		zebra_evpn_es_re_eval_send_to_client(es,
+ 			false /* es_evi_re_reval */);
+ 
+@@ -3937,6 +3950,10 @@ void zebra_evpn_mh_config_write(struct vty *vty)
+ 
+ 	if (zmh_info->flags & ZEBRA_EVPN_MH_REDIRECT_OFF)
+ 		vty_out(vty, "evpn mh redirect-off\n");
++
++	if (zmh_info->vtep_source_ip.s_addr)
++		vty_out(vty, "evpn mh vtep-source-ip %pI4\n",
++			&zmh_info->vtep_source_ip);
+ }
+ 
+ int zebra_evpn_mh_neigh_holdtime_update(struct vty *vty,
+@@ -3991,6 +4008,23 @@ int zebra_evpn_mh_redirect_off(struct vty *vty, bool redirect_off)
+ 	return 0;
+ }
+ 
++/* L3MH (draft-ietf-bess-evpn-l3mh-proto): set/clear explicit VTEP source
++ * IP for ES originator. Re-evaluates all local ES to pick up the new IP.
++ */
++void zebra_evpn_mh_vtep_source_ip_update(struct in_addr vtep_ip)
++{
++	struct listnode *node;
++	struct zebra_evpn_es *es;
++
++	zmh_info->vtep_source_ip = vtep_ip;
++
++	if (!zmh_info->local_es_list)
++		return;
++
++	for (ALL_LIST_ELEMENTS_RO(zmh_info->local_es_list, node, es))
++		zebra_evpn_es_re_eval_send_to_client(es, true);
++}
++
+ void zebra_evpn_mh_init(void)
+ {
+ 	zrouter.mh_info = XCALLOC(MTYPE_ZMH_INFO, sizeof(*zrouter.mh_info));
+diff --git a/zebra/zebra_evpn_mh.h b/zebra/zebra_evpn_mh.h
+index 99b2eb589d..d0fd956c1c 100644
+--- a/zebra/zebra_evpn_mh.h
++++ b/zebra/zebra_evpn_mh.h
+@@ -228,6 +228,9 @@ struct zebra_evpn_mh_info {
+ 	struct zebra_evpn *es_base_evpn;
+ 	struct in_addr es_originator_ip;
+ 
++	/* L3MH: explicit VTEP source IP for ES originator (from CLI) */
++	struct in_addr vtep_source_ip;
++
+ 	/* L2 NH and NHG ids -
+ 	 * Most significant 4 bits is type. Lower 28 bits is the value
+ 	 * allocated from the nh_id_bitmap.
+@@ -311,6 +314,7 @@ static inline bool zebra_evpn_mh_do_adv_svi_mac(void)
+ extern esi_t *zero_esi;
+ extern void zebra_evpn_mh_init(void);
+ extern void zebra_evpn_mh_terminate(void);
++extern void zebra_evpn_mh_vtep_source_ip_update(struct in_addr vtep_ip);
+ extern bool zebra_evpn_is_if_es_capable(struct zebra_if *zif);
+ extern void zebra_evpn_if_init(struct zebra_if *zif);
+ extern void zebra_evpn_if_cleanup(struct zebra_if *zif);
+diff --git a/zebra/zebra_vty.c b/zebra/zebra_vty.c
+index 1ce3c21370..6f5223a299 100644
+--- a/zebra/zebra_vty.c
++++ b/zebra/zebra_vty.c
+@@ -2700,6 +2700,30 @@ DEFPY(evpn_mh_redirect_off, evpn_mh_redirect_off_cmd,
+ 	return zebra_evpn_mh_redirect_off(vty, redirect_off);
+ }
+ 
++DEFPY(evpn_mh_vtep_source_ip, evpn_mh_vtep_source_ip_cmd,
++      "[no$no] evpn mh vtep-source-ip [A.B.C.D$vtep_ip]",
++      NO_STR
++      "EVPN\n"
++      "Multihoming\n"
++      "VTEP source IP for ES originator\n"
++      "IP address\n")
++{
++	struct in_addr ip;
++
++	if (no) {
++		ip.s_addr = 0;
++	} else {
++		if (!vtep_ip_str) {
++			vty_out(vty, "%% IP address required\n");
++			return CMD_WARNING;
++		}
++		ip = vtep_ip;
++	}
++
++	zebra_evpn_mh_vtep_source_ip_update(ip);
++	return CMD_SUCCESS;
++}
++
+ /* show vrf */
+ DEFPY (show_vrf_vni,
+        show_vrf_vni_cmd,
+@@ -4328,6 +4352,7 @@ void zebra_vty_init(void)
+ 	install_element(CONFIG_NODE, &evpn_mh_neigh_holdtime_cmd);
+ 	install_element(CONFIG_NODE, &evpn_mh_startup_delay_cmd);
+ 	install_element(CONFIG_NODE, &evpn_mh_redirect_off_cmd);
++	install_element(CONFIG_NODE, &evpn_mh_vtep_source_ip_cmd);
+ 
+ 	install_element(VIEW_NODE, &show_dataplane_cmd);
+ 	install_element(VIEW_NODE, &show_dataplane_providers_cmd);
