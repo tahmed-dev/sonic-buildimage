@@ -1,0 +1,32 @@
+From: Tamer Ahmed <tamerahmed@microsoft.com>
+Date: Fri, 7 Mar 2026 17:00:00 -0800
+Subject: [PATCH] bgpd: L3MH activate ES VTEP on Type-4 ESR
+
+In L3-only EVPN Multi-Homing (no L2 VNI), remote VTEPs discovered via
+Type-4 ES routes are never activated because evi_cnt remains 0 — there
+are no EVI bindings without an L2 VNI.
+
+Accept BGP_EVPNES_VTEP_ESR (set when a Type-4 ESR route is received)
+as sufficient for VTEP activation, in addition to the existing evi_cnt
+check.  This allows the remote ES VTEP to be sent to zebra for nexthop
+group programming even in L3-only deployments.
+
+Signed-off-by: Tamer Ahmed <tamerahmed@microsoft.com>
+---
+ bgpd/bgp_evpn_mh.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/bgpd/bgp_evpn_mh.c b/bgpd/bgp_evpn_mh.c
+index abcdef123..456789abc 100644
+--- a/bgpd/bgp_evpn_mh.c
++++ b/bgpd/bgp_evpn_mh.c
+@@ -1445,7 +1445,8 @@ static enum zclient_send_status bgp_evpn_es_vtep_re_eval_active(
+ 	/* currently we need an active EVI reference to use the VTEP as
+ 	 * a nexthop. this may change...
+ 	 */
+-	if (es_vtep->evi_cnt)
++	if (es_vtep->evi_cnt ||
++	    CHECK_FLAG(es_vtep->flags, BGP_EVPNES_VTEP_ESR))
+ 		SET_FLAG(es_vtep->flags, BGP_EVPNES_VTEP_ACTIVE);
+ 	else
+ 		UNSET_FLAG(es_vtep->flags, BGP_EVPNES_VTEP_ACTIVE);
