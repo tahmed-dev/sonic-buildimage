@@ -1830,7 +1830,14 @@ jessie : $$(addprefix $(TARGET_PATH)/,$$(JESSIE_DOCKER_IMAGES)) \
 
 .PHONY : $(SONIC_CLEAN_DEBS) $(SONIC_CLEAN_FILES) $(SONIC_CLEAN_PHONIES) $(SONIC_CLEAN_TARGETS) $(SONIC_CLEAN_STDEB_DEBS) $(SONIC_CLEAN_WHEELS) $(SONIC_PHONY_TARGETS) clean distclean configure
 
-.INTERMEDIATE : $(SONIC_INSTALL_DEBS) $(SONIC_INSTALL_WHEELS) $(DOCKER_LOAD_TARGETS) docker-start .platform
+# Install stamps are .SECONDARY (not .INTERMEDIATE) so they persist across
+# incremental make invocations.  .INTERMEDIATE causes make to delete stamps
+# after each run; on re-invocation the missing stamps cascade prerequisite
+# failures that abort the build before reaching the actual targets.
+# The stamps are still ephemeral to the slave container (bind-mounted target/
+# dir), so a fresh container will re-create them as needed.
+.SECONDARY : $(SONIC_INSTALL_DEBS) $(SONIC_INSTALL_WHEELS)
+.INTERMEDIATE : $(DOCKER_LOAD_TARGETS) docker-start .platform
 
 ## To build some commonly used libs. Some submodules depend on these libs.
 ## It is used in component pipelines. For example: swss needs libnl, libyang
