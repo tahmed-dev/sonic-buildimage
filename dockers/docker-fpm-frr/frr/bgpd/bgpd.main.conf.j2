@@ -244,9 +244,6 @@ router bgp {{ DEVICE_METADATA['localhost']['bgp_asn'] }}
 {% block evpn_l3mh %}
 {% if VNET is defined and CONFIG_DB__VXLAN_EVPN_NVO is defined and CONFIG_DB__VXLAN_EVPN_NVO | length > 0 %}
 {% for vnet_name, vnet_metadata in VNET.items() %}
-  address-family ipv4 unicast
-    import vrf {{ vnet_name }}
-  exit-address-family
   address-family l2vpn evpn
     ead-es-route-target export {{ DEVICE_METADATA['localhost']['bgp_asn'] }}:{{ vnet_metadata['vni'] }}
   exit-address-family
@@ -273,6 +270,13 @@ router bgp {{ DEVICE_METADATA['localhost']['bgp_asn'] }}
   exit-address-family
   address-family ipv6
     redistribute connected route-map V6_CONNECTED_ROUTES
+  exit-address-family
+{% elif DEVICE_METADATA['localhost']['type'] == 'SpineRouter' %}
+  address-family ipv4
+    redistribute connected
+  exit-address-family
+  address-family ipv6
+    redistribute connected
   exit-address-family
 {% endif %}
 !
