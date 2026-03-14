@@ -241,6 +241,19 @@ router bgp {{ DEVICE_METADATA['localhost']['bgp_asn'] }}
 {% endif %}
 {% endblock bgp_peers_from_configdb %}
 !
+{% block evpn_l3mh %}
+{% if VNET is defined and CONFIG_DB__VXLAN_EVPN_NVO is defined and CONFIG_DB__VXLAN_EVPN_NVO | length > 0 %}
+{% for vnet_name, vnet_metadata in VNET.items() %}
+  address-family ipv4 unicast
+    import vrf {{ vnet_name }}
+  exit-address-family
+  address-family l2vpn evpn
+    ead-es-route-target export {{ DEVICE_METADATA['localhost']['bgp_asn'] }}:{{ vnet_metadata['vni'] }}
+  exit-address-family
+{% endfor %}
+{% endif %}
+{% endblock evpn_l3mh %}
+!
 {% block vlan_advertisement %}
 {% for (name, prefix) in VLAN_INTERFACE|pfx_filter %}
 {% if prefix | ipv4 and name not in vnet_intfs %}
@@ -288,6 +301,7 @@ router bgp {{ DEVICE_METADATA['localhost']['bgp_asn'] }} vrf {{ vnet_name }}
 !
   address-family ipv4 unicast
     redistribute connected
+    import vrf default
   exit-address-family
 !
   address-family l2vpn evpn
