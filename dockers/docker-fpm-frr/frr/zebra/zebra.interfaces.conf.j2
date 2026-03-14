@@ -3,7 +3,12 @@
 {%  if VNET is defined %}
 {%   for vnet_name, vnet_metadata in VNET.items() %}
 vrf {{ vnet_name }}
+{# L3MH (draft-ietf-bess-evpn-l3mh-proto): skip vni binding when
+   EVPN_ETHERNET_SEGMENT is configured — L3MH uses vtep-source-ip
+   for ES originator, not L3 VNI kernel device binding. #}
+{% if EVPN_ETHERNET_SEGMENT is not defined %}
 vni {{ vnet_metadata['vni'] }}
+{% endif %}
 exit
 !
 {%   endfor %}
@@ -47,10 +52,12 @@ interface {{ es_intf }}
 {% if es_config.df_pref is defined %}
  evpn mh es-df-pref {{ es_config.df_pref }}
 {% endif %}
+ evpn mh uplink
 !
 {% endif %}
 {% endfor %}
 evpn mh startup-delay 30
+evpn mh redirect-off
 {% if VXLAN_TUNNEL is defined %}
 {% for tunnel_name, tunnel_config in VXLAN_TUNNEL.items() %}
 {% if tunnel_config.src_ip is defined %}
