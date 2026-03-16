@@ -248,9 +248,9 @@ router bgp {{ DEVICE_METADATA['localhost']['bgp_asn'] }}
     ead-es-route-target export {{ DEVICE_METADATA['localhost']['bgp_asn'] }}:{{ vnet_metadata['vni'] }}
   exit-address-family
 {% endfor %}
+!
 {% endif %}
 {% endblock evpn_l3mh %}
-!
 {% block vlan_advertisement %}
 {% for (name, prefix) in VLAN_INTERFACE|pfx_filter %}
 {% if prefix | ipv4 and name not in vnet_intfs %}
