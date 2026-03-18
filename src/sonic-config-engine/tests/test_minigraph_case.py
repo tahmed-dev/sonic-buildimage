@@ -188,11 +188,17 @@ class TestCfgGenCaseInsensitive(TestCase):
 
         try:
             # For DHCP server enabled device type
-            output = subprocess.check_output(["sed", "-i", 's/%s/%s/g' % (TOR_ROUTER, BMC_MGMT_TOR_ROUTER), self.sample_graph])
-            output = self.run_script(argument)
+            import shutil, tempfile
+            base = os.path.basename(self.sample_graph)
+            tmp_fd, tmp_graph = tempfile.mkstemp(suffix='-' + base, dir=self.test_dir)
+            os.close(tmp_fd)
+            shutil.copy2(self.sample_graph, tmp_graph)
+            output = subprocess.check_output(["sed", "-i", 's/%s/%s/g' % (TOR_ROUTER, BMC_MGMT_TOR_ROUTER), tmp_graph])
+            argument_tmp = ['-m', tmp_graph, '-p', self.port_config, '-v', "DEVICE_METADATA[\'localhost\'][\'dhcp_server\']"]
+            output = self.run_script(argument_tmp)
             self.assertEqual(output.strip(), 'enabled')
         finally:
-            output = subprocess.check_output(["sed", "-i", 's/%s/%s/g' % (BMC_MGMT_TOR_ROUTER, TOR_ROUTER), self.sample_graph])
+            os.remove(tmp_graph)
 
     def test_minigraph_deployment_id(self):
         argument = ['-m', self.sample_graph, '-p', self.port_config, '-v', "DEVICE_METADATA[\'localhost\'][\'deployment_id\']"]
@@ -339,7 +345,12 @@ class TestCfgGenCaseInsensitive(TestCase):
     def test_minigraph_storage_backend_subintf(self):
         self.verify_storage_device_set(self.sample_subintf_graph)
 
-    def verify_storage_device_set(self, graph_file, check_stderr=False):
+    def verify_storage_device_set(self, graph_file_orig, check_stderr=False):
+        import shutil, tempfile
+        base = os.path.basename(graph_file_orig)
+        tmp_fd, graph_file = tempfile.mkstemp(suffix='-' + base, dir=self.test_dir)
+        os.close(tmp_fd)
+        shutil.copy2(graph_file_orig, graph_file)
         try:
             print('\n    Change device type to %s' % (BACKEND_TOR_ROUTER))
             if check_stderr:
@@ -352,11 +363,7 @@ class TestCfgGenCaseInsensitive(TestCase):
             self.assertEqual(output.strip(), "true")
 
         finally:
-            print('\n    Change device type back to %s' % (TOR_ROUTER))
-            if check_stderr:
-                output = subprocess.check_output(["sed", "-i", 's/%s/%s/g' % (BACKEND_TOR_ROUTER, TOR_ROUTER), graph_file], stderr=subprocess.STDOUT)
-            else:
-                output = subprocess.check_output(["sed", "-i", 's/%s/%s/g' % (BACKEND_TOR_ROUTER, TOR_ROUTER), graph_file])
+            os.remove(graph_file)
 
     def test_minigraph_tunnel_table(self):
         argument = ['-m', self.sample_graph, '-p', self.port_config, '-v', "TUNNEL"]

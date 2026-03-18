@@ -30,7 +30,7 @@ class TestCfgGen(TestCase):
         self.port_config_autoneg = os.path.join(self.test_dir, 't0-sample-autoneg-port-config.ini')
         self.mlnx_port_config = os.path.join(self.test_dir, 'mellanox-sample-port-config.ini')
         self.output_file = os.path.join(self.test_dir, 'output.{}'.format(os.getpid()))
-        self.output2_file = os.path.join(self.test_dir, 'output2')
+        self.output2_file = os.path.join(self.test_dir, 'output2.{}'.format(os.getpid()))
         self.ecmp_graph = os.path.join(self.test_dir, 'fg-ecmp-sample-minigraph.xml')
         self.sample_resource_graph = os.path.join(self.test_dir, 'sample-graph-resource-type.xml')
         self.sample_subintf_graph = os.path.join(self.test_dir, 'sample-graph-subintf.xml')
@@ -765,49 +765,49 @@ class TestCfgGen(TestCase):
         self.verify_no_vlan_member()
 
     def test_minigraph_backend_acl_leaf(self, check_stderr=True):
+        import shutil, tempfile
+        base = os.path.basename(self.sample_backend_graph)
+        tmp_fd, graph_file = tempfile.mkstemp(suffix='-' + base, dir=self.test_dir)
+        os.close(tmp_fd)
+        shutil.copy2(self.sample_backend_graph, graph_file)
         try:
             print('\n    Change device type to %s' % (BACKEND_LEAF_ROUTER))
             if check_stderr:
-                output = subprocess.check_output(["sed", "-i", 's/%s/%s/g' % (TOR_ROUTER, BACKEND_LEAF_ROUTER), self.sample_backend_graph], stderr=subprocess.STDOUT)
+                output = subprocess.check_output(["sed", "-i", 's/%s/%s/g' % (TOR_ROUTER, BACKEND_LEAF_ROUTER), graph_file], stderr=subprocess.STDOUT)
             else:
-                output = subprocess.check_output(["sed", "-i", 's/%s/%s/g' % (TOR_ROUTER, BACKEND_LEAF_ROUTER), self.sample_backend_graph])
+                output = subprocess.check_output(["sed", "-i", 's/%s/%s/g' % (TOR_ROUTER, BACKEND_LEAF_ROUTER), graph_file])
 
-            self.test_jinja_expression(self.sample_backend_graph, self.port_config, BACKEND_LEAF_ROUTER)
+            self.test_jinja_expression(graph_file, self.port_config, BACKEND_LEAF_ROUTER)
 
             # ACL_TABLE should contain EVERFLOW related entries
-            argument = ['-m', self.sample_backend_graph, '-p', self.port_config, '-v', "ACL_TABLE"]
+            argument = ['-m', graph_file, '-p', self.port_config, '-v', "ACL_TABLE"]
             output = self.run_script(argument)
             sample_output = utils.to_dict(output.strip()).keys()
             assert 'DATAACL' not in sample_output, sample_output
             assert 'EVERFLOW' in sample_output, sample_output
 
         finally:
-            print('\n    Change device type back to %s' % (TOR_ROUTER))
-            if check_stderr:
-                output = subprocess.check_output(["sed", "-i", 's/%s/%s/g' % (BACKEND_LEAF_ROUTER, TOR_ROUTER), self.sample_backend_graph], stderr=subprocess.STDOUT)
-            else:
-                output = subprocess.check_output(["sed", "-i", 's/%s/%s/g' % (BACKEND_LEAF_ROUTER, TOR_ROUTER), self.sample_backend_graph])
-
-            self.test_jinja_expression(self.sample_backend_graph, self.port_config, TOR_ROUTER)
+            os.remove(graph_file)
 
     def test_minigraph_sub_port_no_vlan_member(self, check_stderr=True):
+        import shutil, tempfile
+        base = os.path.basename(self.sample_graph)
+        tmp_fd, graph_file = tempfile.mkstemp(suffix='-' + base, dir=self.test_dir)
+        os.close(tmp_fd)
+        shutil.copy2(self.sample_graph, graph_file)
         try:
             print('\n    Change device type to %s' % (BACKEND_LEAF_ROUTER))
             if check_stderr:
-                output = subprocess.check_output(["sed", "-i", 's/%s/%s/g' % (LEAF_ROUTER, BACKEND_LEAF_ROUTER), self.sample_graph], stderr=subprocess.STDOUT)
+                output = subprocess.check_output(["sed", "-i", 's/%s/%s/g' % (LEAF_ROUTER, BACKEND_LEAF_ROUTER), graph_file], stderr=subprocess.STDOUT)
             else:
-                output = subprocess.check_output(["sed", "-i", 's/%s/%s/g' % (LEAF_ROUTER, BACKEND_LEAF_ROUTER), self.sample_graph])
+                output = subprocess.check_output(["sed", "-i", 's/%s/%s/g' % (LEAF_ROUTER, BACKEND_LEAF_ROUTER), graph_file])
 
-            self.test_jinja_expression(self.sample_graph, self.port_config, BACKEND_LEAF_ROUTER)
-            self.verify_no_vlan_member()
+            self.test_jinja_expression(graph_file, self.port_config, BACKEND_LEAF_ROUTER)
+            argument = ['-m', graph_file, '-p', self.port_config, '-v', "VLAN_MEMBER"]
+            output = self.run_script(argument)
+            self.assertEqual(output.strip(), "{}")
         finally:
-            print('\n    Change device type back to %s' % (LEAF_ROUTER))
-            if check_stderr:
-                output = subprocess.check_output(["sed", "-i", 's/%s/%s/g' % (BACKEND_LEAF_ROUTER, LEAF_ROUTER), self.sample_graph], stderr=subprocess.STDOUT)
-            else:
-                output = subprocess.check_output(["sed", "-i", 's/%s/%s/g' % (BACKEND_LEAF_ROUTER, LEAF_ROUTER), self.sample_graph])
-
-            self.test_jinja_expression(self.sample_graph, self.port_config, LEAF_ROUTER)
+            os.remove(graph_file)
 
     def verify_no_vlan_member(self):
         argument = ['-m', self.sample_graph, '-p', self.port_config, '-v', "VLAN_MEMBER"]
@@ -823,8 +823,14 @@ class TestCfgGen(TestCase):
         self.test_minigraph_vlan_members(graph_file=graph_file)
 
     def verify_sub_intf(self, **kwargs):
-        graph_file = kwargs.get('graph_file', self.sample_graph_simple)
+        graph_file_orig = kwargs.get('graph_file', self.sample_graph_simple)
         check_stderr = kwargs.get('check_stderr', True)
+        import shutil, tempfile
+        # Preserve basename pattern (e.g. 'subintf') used in assertions below
+        base = os.path.basename(graph_file_orig)
+        tmp_fd, graph_file = tempfile.mkstemp(suffix='-' + base, dir=self.test_dir)
+        os.close(tmp_fd)
+        shutil.copy2(graph_file_orig, graph_file)
         try:
             print('\n    Change device type to %s' % (BACKEND_TOR_ROUTER))
             if check_stderr:
@@ -901,13 +907,7 @@ class TestCfgGen(TestCase):
             self.test_minigraph_vlan_members(graph_file=graph_file, tag_mode='tagged')
 
         finally:
-            print('\n    Change device type back to %s' % (TOR_ROUTER))
-            if check_stderr:
-                output = subprocess.check_output(["sed", "-i", 's/%s/%s/g' % (BACKEND_TOR_ROUTER, TOR_ROUTER), graph_file], stderr=subprocess.STDOUT)
-            else:
-                output = subprocess.check_output(["sed", "-i", 's/%s/%s/g' % (BACKEND_TOR_ROUTER, TOR_ROUTER), graph_file])
-
-            self.test_jinja_expression(graph_file, self.port_config, TOR_ROUTER)
+            os.remove(graph_file)
 
     def test_show_run_acl(self):
         argument = ['-a', '{"key1":"value"}', '--var-json', 'ACL_RULE']
