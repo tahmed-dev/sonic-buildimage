@@ -511,11 +511,14 @@ class BGPPeerMgrBase(Manager):
         :return: True if no errors, False if there are errors
         """
         bgp_asn = self.directory.get_slot("CONFIG_DB", swsscommon.CFG_DEVICE_METADATA_TABLE_NAME)["localhost"]["bgp_asn"]
-        enable_bgp_suppress_fib_pending_cmd = 'bgp suppress-fib-pending'
+        metadata = self.directory.get_slot("CONFIG_DB", swsscommon.CFG_DEVICE_METADATA_TABLE_NAME)["localhost"]
+        evpn_mh_enabled = metadata.get("evpn_mh_enabled", "false") == "true"
+        enable_bgp_suppress_fib_pending_cmd = '' if evpn_mh_enabled else 'bgp suppress-fib-pending'
+        suppress_line = (' %s\n' % enable_bgp_suppress_fib_pending_cmd) if enable_bgp_suppress_fib_pending_cmd else ''
         if vrf == 'default':
-            cmd = ('router bgp %s\n %s\n' % (bgp_asn, enable_bgp_suppress_fib_pending_cmd)) + cmd + "\nexit"
+            cmd = ('router bgp %s\n' % bgp_asn) + suppress_line + cmd + "\nexit"
         else:
-            cmd = ('router bgp %s vrf %s\n %s\n' % (bgp_asn, vrf, enable_bgp_suppress_fib_pending_cmd)) + cmd + "\nexit"
+            cmd = ('router bgp %s vrf %s\n' % (bgp_asn, vrf)) + suppress_line + cmd + "\nexit"
         self.cfg_mgr.push(cmd)
         return True
 
