@@ -37,3 +37,4 @@
 0102-evpn-L3-Multi-Homing-support-for-EAD-ESR-routes.patch
 0103-zebra-L3MH-vtep-source-ip-CLI-and-L3-VNI-re-eval.patch
 0104-bgpd-L3MH-activate-ES-VTEP-on-Type-4-ESR.patch
+0105-bgpd-L3MH-allow-VRF-import-of-same-ES-MAC-IP-routes.patch

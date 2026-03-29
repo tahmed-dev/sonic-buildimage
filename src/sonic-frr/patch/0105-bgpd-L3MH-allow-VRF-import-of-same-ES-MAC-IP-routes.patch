@@ -1,0 +1,48 @@
+From dbb825cca67256a79b500e47468704500f431ea8 Mon Sep 17 00:00:00 2001
+From: Tamer Ahmed <tamerahmed@microsoft.com>
+Date: Sun, 29 Mar 2026 00:59:00 -0700
+Subject: [PATCH] bgpd: allow VRF import of MAC/IP routes from local ES for L3
+ MH
+
+Signed-off-by: Tamer Ahmed <tamerahmed@microsoft.com>
+---
+ bgpd/bgp_evpn.c | 22 +++++++++++++++++++++-
+ 1 file changed, 21 insertions(+), 1 deletion(-)
+
+diff --git a/bgpd/bgp_evpn.c b/bgpd/bgp_evpn.c
+index e33a30bfaa..3036f048e1 100644
+--- a/bgpd/bgp_evpn.c
++++ b/bgpd/bgp_evpn.c
+@@ -3910,8 +3910,28 @@ bool bgp_evpn_skip_vrf_import_of_local_es(struct bgp *bgp_vrf, const struct pref
+ 	if (evp->prefix.route_type == BGP_EVPN_MAC_IP_ROUTE) {
+ 		esi = bgp_evpn_attr_get_esi(pi->attr);
+ 
+-		/* Don't import routes that point to a local destination */
++		/* Don't import routes that point to a local destination.
++		 * Exception: For EVPN L3 multi-homing, MAC/IP routes from
++		 * the same ES that carry an IP (neighbor sync) MUST be
++		 * imported so that all ES peers have the full neighbor table.
++		 * Only skip MAC-only routes (ip_prefix_length == 0). */
+ 		if (bgp_evpn_attr_is_local_es(pi->attr)) {
++			/* Allow import if the route has an IP address
++			 * (MAC/IP neighbor sync for L3 MH) */
++			if (evp->prefix.macip_addr.ip_prefix_length > 0) {
++				if (BGP_DEBUG(evpn_mh, EVPN_MH_RT)) {
++					char esi_buf[ESI_STR_LEN];
++
++					zlog_debug(
++						"vrf %s of evpn prefix %pFX allowed, local es %s (L3MH neighbor sync)",
++						install ? "import"
++							: "unimport",
++						evp,
++						esi_to_str(esi, esi_buf,
++							   sizeof(esi_buf)));
++				}
++				return false;
++			}
+ 			if (BGP_DEBUG(evpn_mh, EVPN_MH_RT)) {
+ 				char esi_buf[ESI_STR_LEN];
+ 
+-- 
+2.43.0
+
