@@ -1,0 +1,39 @@
+zebra: install peer-active sync neighbors as extern_learn for L3 MH
+
+For EVPN L3 MH, peer-active sync neighbors must be installed with
+NTF_EXT_LEARNED (extern_learn) to prevent the kernel from overriding
+them with failed ARP resolution due to LACP hash asymmetry.
+
+Signed-off-by: Tamer Ahmed <tamerahmed@microsoft.com>
+
+--- a/zebra/zebra_evpn_neigh.c	2026-03-29 08:22:07.602368246 -0700
++++ b/zebra/zebra_evpn_neigh.c	2026-03-29 08:22:07.682863873 -0700
+@@ -259,8 +259,10 @@
+ 
+ 	set_router = !!CHECK_FLAG(n->flags, ZEBRA_NEIGH_ROUTER_FLAG);
+ 
+-	/* XXX - this will change post integration with the new kernel */
+-	if (CHECK_FLAG(n->flags, ZEBRA_NEIGH_LOCAL_INACTIVE))
++	/* For EVPN L3 MH, peer-active sync neighbors need extern_learn */
++	if (CHECK_FLAG(n->flags, ZEBRA_NEIGH_ES_PEER_ACTIVE))
++		set_inactive = false;
++	else if (CHECK_FLAG(n->flags, ZEBRA_NEIGH_LOCAL_INACTIVE))
+ 		set_inactive = true;
+ 
+ 	if (IS_ZEBRA_DEBUG_EVPN_MH_NEIGH)
+@@ -271,8 +273,13 @@
+ 			set_router ? " router" : "",
+ 			set_static ? " static" : "",
+ 			set_inactive ? " inactive" : "");
+-	dplane_local_neigh_add(ifp, &n->ip, &n->emac, set_router, set_static,
+-			       set_inactive);
++	/* Use rem_neigh_add for peer-active to get NTF_EXT_LEARNED */
++	if (CHECK_FLAG(n->flags, ZEBRA_NEIGH_ES_PEER_ACTIVE))
++		dplane_rem_neigh_add(ifp, &n->ip, &n->emac,
++				     DPLANE_NTF_EXT_LEARNED, false);
++	else
++		dplane_local_neigh_add(ifp, &n->ip, &n->emac, set_router,
++				       set_static, set_inactive);
+ }
+ 
+ /*
