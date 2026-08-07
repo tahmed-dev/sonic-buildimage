@@ -42,3 +42,4 @@
 0119-bgpd-fix-aggregate-route-counter.patch
 0120-SONiC-ONLY-run-the-FRR-unit-tests-during-the-package-build.patch
 0129-zebra-let-a-dataplane-module-learn-local-MACs.patch
+0130-SONiC-ONLY-dplane-fpm-sonic-split-out-MAC-decode-and-test.patch
