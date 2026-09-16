@@ -47,3 +47,4 @@
 0123-zebra-do-not-let-a-kernel-echo-clear-a-neighbour-loc.patch
 0124-zebra-preserve-and-reconcile-inactive-MAC-neighbours.patch
 0125-zebra-revive-a-MAC-s-neighbours-when-the-MAC-becomes.patch
+0126-zebra-flush-a-local-inactive-MAC-once-nothing-pins-it.patch
