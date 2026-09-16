@@ -43,3 +43,4 @@
 0119-bgpd-fix-aggregate-route-counter.patch
 0120-SONiC-ONLY-run-the-FRR-unit-tests-during-the-package-build.patch
 0121-bgpd-fold-EVPN-sync-info-from-every-ES-peer-path.patch
+0122-zebra-retire-a-sync-MAC-neighbours-when-the-MAC-goes.patch
