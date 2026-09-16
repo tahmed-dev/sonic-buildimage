@@ -44,3 +44,4 @@
 0120-SONiC-ONLY-run-the-FRR-unit-tests-during-the-package-build.patch
 0121-bgpd-fold-EVPN-sync-info-from-every-ES-peer-path.patch
 0122-zebra-retire-a-sync-MAC-neighbours-when-the-MAC-goes.patch
+0123-zebra-do-not-let-a-kernel-echo-clear-a-neighbour-loc.patch
