@@ -141,3 +141,34 @@ size_t fpm_mac_encode(const struct fpm_remote_mac *in, void *buf, size_t buflen)
 
 	return NLMSG_ALIGN(n->nlmsg_len);
 }
+
+size_t fpm_mac_pin_encode(const struct fpm_mac_pin *pin, bool del, void *buf,
+			  size_t buflen)
+{
+	struct nlmsghdr *n = buf;
+	struct ndmsg *ndm;
+
+	if (pin == NULL || buf == NULL ||
+	    buflen < NLMSG_SPACE(sizeof(struct ndmsg)))
+		return 0;
+
+	memset(buf, 0, NLMSG_SPACE(sizeof(struct ndmsg)));
+	n->nlmsg_len = NLMSG_LENGTH(sizeof(struct ndmsg));
+	n->nlmsg_type = del ? RTM_DELNEIGH : RTM_NEWNEIGH;
+	n->nlmsg_flags = NLM_F_REQUEST;
+	if (!del)
+		n->nlmsg_flags |= NLM_F_CREATE | NLM_F_REPLACE;
+
+	ndm = NLMSG_DATA(n);
+	ndm->ndm_family = AF_BRIDGE;
+	ndm->ndm_ifindex = pin->ifindex;
+	ndm->ndm_flags = NTF_MASTER;
+	ndm->ndm_state = NUD_REACHABLE | NUD_NOARP;
+
+	if (!fpm_mac_put_attr(n, buflen, NDA_LLADDR, pin->mac, ETH_ALEN))
+		return 0;
+	if (!fpm_mac_put_attr(n, buflen, NDA_VLAN, &pin->vid, sizeof(pin->vid)))
+		return 0;
+
+	return NLMSG_ALIGN(n->nlmsg_len);
+}

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * The FPM MAC (AF_BRIDGE neighbour) messages exchanged with fpmsyncd: decoding
- * the local MACs SONiC sends, encoding the remote MACs FRR sends.
+ * the local MACs SONiC sends, encoding the remote MACs and MAC pins FRR sends.
  *
  * Kept free of zebra state so both directions can be unit tested on their own,
  * and so the decode runs on the FPM thread while the caller applies the result
@@ -30,6 +30,7 @@ struct fpm_hw_mac {
 	uint16_t vid;		/* VLAN on that port, 0 when untagged */
 	bool del;		/* aged out, or no longer on the port */
 	bool sticky;		/* static MAC: EVPN sticky, it may not move */
+	bool set_static;	/* zebra wrote the entry static; its writes only */
 };
 
 /*
@@ -86,5 +87,33 @@ struct fpm_remote_mac {
  */
 extern size_t fpm_mac_encode(const struct fpm_remote_mac *in, void *buf,
 			     size_t buflen);
+
+/*
+ * A MAC zebra pins on a bridge port of a VLAN with no L2VNI: the pure-L3
+ * neighbour an Ethernet Segment peer syncs pins its MAC on the local port of
+ * that segment, so routed traffic reaches the host there.
+ */
+struct fpm_mac_pin {
+	int ifindex;		/* the Ethernet Segment port */
+	uint8_t mac[ETH_ALEN];
+	uint16_t vid;
+};
+
+/*
+ * Encode a pin as zebra encodes a static local MAC (netlink_macfdb_update_ctx()
+ * with DPLANE_MAC_SET_STATIC), less NDA_DST. fpmsyncd programs a MAC on an
+ * Ethernet Segment port that has neither a VTEP nor a group against that port;
+ * NUD_NOARP makes it static.
+ *
+ *   ndm_ifindex  the port
+ *   ndm_flags    NTF_MASTER
+ *   ndm_state    NUD_REACHABLE | NUD_NOARP
+ *   NDA_LLADDR   MAC
+ *   NDA_VLAN     VLAN
+ *
+ * Returns the message length, or 0 when it does not fit in buflen.
+ */
+extern size_t fpm_mac_pin_encode(const struct fpm_mac_pin *pin, bool del,
+				 void *buf, size_t buflen);
 
 #endif /* _FPM_MAC_H */

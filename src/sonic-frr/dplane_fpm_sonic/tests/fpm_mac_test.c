@@ -18,12 +18,12 @@
  * @file fpm_mac_test.c
  * @brief Unit tests for the FPM MAC messages exchanged with fpmsyncd.
  *
- * fpm_mac_decode() and fpm_mac_encode() are the parts of the FPM MAC path that
- * run without zebra: everything else mutates the EVPN tables on zebra's main
- * thread. The decode tests build the messages fpmsyncd sends and check the
- * decoded fields, including the malformed cases that would otherwise install a
- * zero MAC or a wrong VLAN. The encode tests check every field fpmsyncd reads
- * in the messages it is sent.
+ * fpm_mac_decode(), fpm_mac_encode() and fpm_mac_pin_encode() are the parts of
+ * the FPM MAC path that run without zebra: everything else mutates the EVPN
+ * tables on zebra's main thread. The decode tests build the messages fpmsyncd
+ * sends and check the decoded fields, including the malformed cases that would
+ * otherwise install a zero MAC or a wrong VLAN. The encode tests check every
+ * field fpmsyncd reads in the messages it is sent.
  */
 
 #include <CUnit/Basic.h>
@@ -395,6 +395,73 @@ static void test_encode_rejects_short_buffer(void)
 	CU_ASSERT_EQUAL(fpm_mac_encode(NULL, &m, sizeof(m)), 0);
 }
 
+static void pin_init(struct fpm_mac_pin *pin)
+{
+	memset(pin, 0, sizeof(*pin));
+	pin->ifindex = 77;
+	pin->vid = 200;
+	memcpy(pin->mac, kMac, ETH_ALEN);
+}
+
+/* fpmsyncd programs a MAC against its Ethernet Segment port only when the
+ * message has neither a VTEP nor a group, so a pin carries neither; NUD_NOARP
+ * makes it static. */
+static void test_pin_encode(void)
+{
+	struct fpm_mac_pin pin;
+	struct mac_msg m;
+	size_t len;
+
+	pin_init(&pin);
+	memset(&m, 0xAB, sizeof(m));
+	len = fpm_mac_pin_encode(&pin, false, &m, sizeof(m));
+	CU_ASSERT_EQUAL_FATAL(len, NLMSG_ALIGN(m.n.nlmsg_len));
+	CU_ASSERT_EQUAL(m.n.nlmsg_type, RTM_NEWNEIGH);
+	CU_ASSERT_EQUAL(m.n.nlmsg_flags,
+			NLM_F_REQUEST | NLM_F_CREATE | NLM_F_REPLACE);
+	CU_ASSERT_EQUAL(m.ndm.ndm_family, AF_BRIDGE);
+	CU_ASSERT_EQUAL(m.ndm.ndm_ifindex, 77);
+	CU_ASSERT_EQUAL(m.ndm.ndm_flags, NTF_MASTER);
+	CU_ASSERT_EQUAL(m.ndm.ndm_state, NUD_REACHABLE | NUD_NOARP);
+	check_attr(&m, NDA_LLADDR, kMac, ETH_ALEN);
+	check_attr(&m, NDA_VLAN, &pin.vid, sizeof(pin.vid));
+	CU_ASSERT_PTR_NULL(msg_attr(&m, NDA_DST));
+	CU_ASSERT_PTR_NULL(msg_attr(&m, NDA_NH_ID));
+	CU_ASSERT_PTR_NULL(msg_attr(&m, NDA_SRC_VNI));
+}
+
+/* Removing a pin names the same port, MAC and VLAN, without NLM_F_CREATE. */
+static void test_pin_encode_delete(void)
+{
+	struct fpm_mac_pin pin;
+	struct mac_msg m;
+
+	pin_init(&pin);
+	CU_ASSERT_TRUE(fpm_mac_pin_encode(&pin, true, &m, sizeof(m)) > 0);
+	CU_ASSERT_EQUAL(m.n.nlmsg_type, RTM_DELNEIGH);
+	CU_ASSERT_EQUAL(m.n.nlmsg_flags, NLM_F_REQUEST);
+	CU_ASSERT_EQUAL(m.ndm.ndm_ifindex, 77);
+	check_attr(&m, NDA_LLADDR, kMac, ETH_ALEN);
+	check_attr(&m, NDA_VLAN, &pin.vid, sizeof(pin.vid));
+}
+
+/* A pin that does not fit is not sent in part. */
+static void test_pin_encode_rejects_short_buffer(void)
+{
+	struct fpm_mac_pin pin;
+	struct mac_msg m;
+
+	pin_init(&pin);
+	CU_ASSERT_EQUAL(fpm_mac_pin_encode(&pin, false, &m,
+					   NLMSG_LENGTH(sizeof(struct ndmsg)) +
+						   RTA_SPACE(ETH_ALEN)),
+			0);
+	CU_ASSERT_EQUAL(fpm_mac_pin_encode(&pin, false, &m,
+					   sizeof(struct nlmsghdr)),
+			0);
+	CU_ASSERT_EQUAL(fpm_mac_pin_encode(NULL, false, &m, sizeof(m)), 0);
+}
+
 int main(void)
 {
 	CU_pSuite suite;
@@ -424,7 +491,11 @@ int main(void)
 	    !CU_add_test(suite, "unset fields not sent",
 			 test_encode_omits_unset_fields) ||
 	    !CU_add_test(suite, "short buffer rejected",
-			 test_encode_rejects_short_buffer))
+			 test_encode_rejects_short_buffer) ||
+	    !CU_add_test(suite, "pin encoded", test_pin_encode) ||
+	    !CU_add_test(suite, "pin delete", test_pin_encode_delete) ||
+	    !CU_add_test(suite, "pin short buffer rejected",
+			 test_pin_encode_rejects_short_buffer))
 		goto fail;
 
 	CU_basic_set_mode(CU_BRM_SILENT);

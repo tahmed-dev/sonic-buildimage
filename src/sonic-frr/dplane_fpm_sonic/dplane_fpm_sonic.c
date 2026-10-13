@@ -227,6 +227,7 @@ struct fpm_nl_ctx {
 	struct event *t_ribwalk;
 	struct event *t_rmacreset;
 	struct event *t_rmacwalk;
+	struct event *t_pinwalk;	/* MAC pin replay, see fpm_pin_replay() */
 
 	/* Statistic counters. */
 	struct {
@@ -309,6 +310,9 @@ static void fpm_rib_send(struct event *t);
 static void fpm_rib_reset(struct event *t);
 static void fpm_rmac_send(struct event *t);
 static void fpm_rmac_reset(struct event *t);
+static void fpm_write(struct event *t);
+static struct interface *fpm_mac_bridge_port(int ifindex,
+					     struct interface **br_if);
 
 /*
  * CLI.
@@ -670,6 +674,7 @@ static void fpm_reconnect(struct fpm_nl_ctx *fnc)
 	event_cancel_async(zrouter.master, &fnc->t_ribwalk, NULL);
 	event_cancel_async(zrouter.master, &fnc->t_rmacreset, NULL);
 	event_cancel_async(zrouter.master, &fnc->t_rmacwalk, NULL);
+	event_cancel_async(zrouter.master, &fnc->t_pinwalk, NULL);
 
 	/*
 	 * Grab the lock to empty the streams (data plane might try to
@@ -709,13 +714,16 @@ static void fpm_reconnect(struct fpm_nl_ctx *fnc)
  * fpmsyncd reports, and BGP, when an Ethernet Segment peer advertises it on a
  * local ES. The kernel bridge FDB holds the MAC while either owner has it:
  * this module writes the entry for the hardware, zebra writes it for BGP.
- * From FRR to SONiC only remote MACs are sent.
+ * From FRR to SONiC go the remote MACs and, on VLANs with no L2VNI, the MAC
+ * pins below.
  */
 
 /* A MAC event the FPM or dataplane thread passes to zebra's main thread. */
 DEFINE_MTYPE_STATIC(ZEBRA, FPM_MAC_EVENT, "FPM MAC event");
 /* An entry of the hardware MAC table below. */
 DEFINE_MTYPE_STATIC(ZEBRA, FPM_HW_MAC, "FPM hardware MAC");
+/* An entry of the pin table below. */
+DEFINE_MTYPE_STATIC(ZEBRA, FPM_MAC_PIN, "FPM MAC pin");
 
 /*
  * The MACs the hardware has, by VLAN and MAC, as fpmsyncd last reported them.
@@ -787,6 +795,109 @@ static void fpm_hw_mac_del(uint16_t vid, const uint8_t *mac)
 	XFREE(MTYPE_FPM_HW_MAC, e);
 }
 
+/*
+ * Pins zebra writes on VLANs with no L2VNI, for pure-L3 neighbours synced from
+ * an Ethernet Segment peer. Nothing else carries them to the ASIC, and they
+ * must outlive the MAC the ASIC learns there. Main thread only.
+ */
+PREDECL_HASH(fpm_mac_pins);
+
+struct fpm_pin {
+	struct fpm_mac_pins_item item;
+	struct fpm_mac_pin pin;
+};
+
+static int fpm_pin_cmp(const struct fpm_pin *a, const struct fpm_pin *b)
+{
+	if (a->pin.vid != b->pin.vid)
+		return a->pin.vid < b->pin.vid ? -1 : 1;
+
+	return memcmp(a->pin.mac, b->pin.mac, ETH_ALEN);
+}
+
+static uint32_t fpm_pin_hash(const struct fpm_pin *p)
+{
+	return jhash(p->pin.mac, ETH_ALEN, p->pin.vid);
+}
+
+DECLARE_HASH(fpm_mac_pins, struct fpm_pin, item, fpm_pin_cmp, fpm_pin_hash);
+
+static struct fpm_mac_pins_head mac_pins = INIT_HASH(mac_pins);
+
+static struct fpm_pin *fpm_pin_find(uint16_t vid, const uint8_t *mac)
+{
+	struct fpm_pin key = {};
+
+	key.pin.vid = vid;
+	memcpy(key.pin.mac, mac, ETH_ALEN);
+
+	return fpm_mac_pins_find(&mac_pins, &key);
+}
+
+/* False only when the output buffer has no room for it. */
+static bool fpm_pin_write(struct fpm_nl_ctx *fnc, const struct fpm_mac_pin *pin,
+			  bool del)
+{
+	uint8_t buf[128];
+	size_t nl_len;
+
+	nl_len = fpm_mac_pin_encode(pin, del, buf, sizeof(buf));
+	if (nl_len == 0)
+		return true;
+
+	frr_mutex_lock_autounlock(&fnc->obuf_mutex);
+
+	if (STREAM_WRITEABLE(fnc->obuf) < (nl_len + FPM_HEADER_SIZE)) {
+		atomic_fetch_add_explicit(&fnc->counters.buffer_full, 1,
+					  memory_order_relaxed);
+		return false;
+	}
+
+	stream_putc(fnc->obuf, 1);
+	stream_putc(fnc->obuf, 1);
+	stream_putw(fnc->obuf, (uint16_t)(nl_len + FPM_HEADER_SIZE));
+	stream_write(fnc->obuf, buf, nl_len);
+
+	/* Nothing else may follow it, so flush it here. */
+	event_add_write(fnc->fthread->master, fpm_write, fnc, fnc->socket,
+			&fnc->t_write);
+	return true;
+}
+
+/* Without a session, fpm_pin_replay() sends it on the next connect. */
+static void fpm_pin_send(const struct fpm_mac_pin *pin, bool del)
+{
+	struct fpm_nl_ctx *fnc = gfnc;
+
+	if (fnc == NULL || fnc->socket == -1 || fnc->connecting)
+		return;
+
+	if (!fpm_pin_write(fnc, pin, del))
+		zlog_warn("%s: no room for the pin of %pEA vlan %u", __func__,
+			  (const struct ethaddr *)pin->mac, pin->vid);
+}
+
+/*
+ * Every FPM connect sends the pins again, after the router MACs: a pin zebra
+ * writes while the session is down is recorded but not sent. Sending one twice
+ * is harmless.
+ */
+static void fpm_pin_replay(struct event *t)
+{
+	struct fpm_nl_ctx *fnc = EVENT_ARG(t);
+	struct fpm_pin *p;
+
+	frr_each (fpm_mac_pins, &mac_pins, p) {
+		if (fpm_pin_write(fnc, &p->pin, false))
+			continue;
+
+		/* No room: start over once the buffer has drained. */
+		event_add_timer(zrouter.master, fpm_pin_replay, fnc, 1,
+				&fnc->t_pinwalk);
+		return;
+	}
+}
+
 static struct zebra_mac *fpm_zebra_mac_lookup(struct interface *ifp,
 					      struct interface *br_if,
 					      vlanid_t vid,
@@ -807,15 +918,29 @@ static bool fpm_mac_bgp_owned(struct zebra_mac *zmac)
 /*
  * The hardware no longer has the MAC. If BGP still owns it, the MAC goes from
  * hardware and BGP to BGP only: zebra keeps it local-inactive and keeps its
- * kernel entry. Otherwise no owner is left and the kernel entry is removed.
+ * kernel entry. Otherwise no owner is left and the kernel entry is removed, or
+ * gives way to the pin it was written over.
  */
 static void fpm_hw_mac_lost(struct interface *ifp, struct interface *br_if,
 			    vlanid_t vid, struct ethaddr *mac)
 {
+	struct interface *pin_br_if = NULL;
+	struct interface *pin_ifp = NULL;
+	struct fpm_pin *p;
+
 	zebra_vxlan_local_mac_del(ifp, br_if, mac, vid);
 
 	if (fpm_mac_bgp_owned(fpm_zebra_mac_lookup(ifp, br_if, vid, mac)))
 		return;
+
+	p = fpm_pin_find(vid, mac->octet);
+	if (p)
+		pin_ifp = fpm_mac_bridge_port(p->pin.ifindex, &pin_br_if);
+	if (pin_ifp) {
+		dplane_local_mac_add(pin_ifp, pin_br_if, vid, mac, false, true,
+				     false);
+		return;
+	}
 
 	dplane_local_mac_del(ifp, br_if, vid, mac);
 }
@@ -899,6 +1024,57 @@ done:
 }
 
 /*
+ * zebra wrote or removed a local MAC. On a VLAN with no L2VNI a static write is
+ * a pin. This module never removes a pinned entry itself, fpm_hw_mac_lost()
+ * restores it instead, so a removal on the pinned port is zebra's.
+ */
+static void fpm_pin_recheck(const struct fpm_hw_mac *written)
+{
+	struct interface *br_if = NULL;
+	struct interface *ifp;
+	struct fpm_pin *p;
+
+	p = fpm_pin_find(written->vid, written->mac);
+
+	if (written->del) {
+		if (!p || p->pin.ifindex != written->ifindex)
+			return;
+
+		if (IS_ZEBRA_DEBUG_FPM)
+			zlog_debug("%s: unpinning %pEA vlan %u", __func__,
+				   (const struct ethaddr *)written->mac,
+				   written->vid);
+		fpm_pin_send(&p->pin, true);
+		fpm_mac_pins_del(&mac_pins, p);
+		XFREE(MTYPE_FPM_MAC_PIN, p);
+		return;
+	}
+
+	/* Already pinned there, as when fpm_hw_mac_lost() restored it. */
+	if (!written->set_static ||
+	    (p && p->pin.ifindex == written->ifindex))
+		return;
+
+	ifp = fpm_mac_bridge_port(written->ifindex, &br_if);
+	if (!ifp || zebra_evpn_map_vlan(ifp, br_if, written->vid))
+		return;
+
+	if (!p) {
+		p = XCALLOC(MTYPE_FPM_MAC_PIN, sizeof(*p));
+		p->pin.vid = written->vid;
+		memcpy(p->pin.mac, written->mac, ETH_ALEN);
+		fpm_mac_pins_add(&mac_pins, p);
+	}
+	p->pin.ifindex = written->ifindex;
+
+	if (IS_ZEBRA_DEBUG_FPM)
+		zlog_debug("%s: pinning %pEA vlan %u on %s", __func__,
+			   (const struct ethaddr *)written->mac, written->vid,
+			   ifp->name);
+	fpm_pin_send(&p->pin, false);
+}
+
+/*
  * zebra removed the kernel entry of a local MAC, to flush it or because an
  * Ethernet Segment peer withdrew its route, or wrote it for a MAC it holds
  * local-inactive. If the hardware still has the MAC it still owns it, and
@@ -912,6 +1088,8 @@ static void fpm_hw_mac_recheck(struct event *t)
 	struct interface *ifp;
 	struct zebra_mac *zmac;
 	struct ethaddr mac;
+
+	fpm_pin_recheck(written);
 
 	e = fpm_hw_mac_lookup(written->vid, written->mac);
 	if (!e)
@@ -1012,6 +1190,8 @@ static void fpm_kernel_mac_write(const struct zebra_dplane_ctx *ctx)
 	written->vid = dplane_ctx_mac_get_vlan(ctx);
 	memcpy(written->mac, dplane_ctx_mac_get_addr(ctx)->octet, ETH_ALEN);
 	written->del = dplane_ctx_get_op(ctx) == DPLANE_OP_MAC_DELETE;
+	written->set_static = CHECK_FLAG(dplane_ctx_mac_get_update_flags(ctx),
+					 DPLANE_MAC_SET_STATIC);
 
 	event_add_event(zrouter.master, fpm_hw_mac_recheck, written, 0, NULL);
 }
@@ -3613,8 +3793,11 @@ static void fpm_rmac_send(struct event *t)
 	dplane_ctx_fini(&fra.ctx);
 
 	/* RMAC walk completed. */
-	if (fra.complete)
+	if (fra.complete) {
 		WALK_FINISH(fra.fnc, FNE_RMAC_FINISHED);
+		event_add_event(zrouter.master, fpm_pin_replay, fra.fnc, 0,
+				&fra.fnc->t_pinwalk);
+	}
 }
 
 /*
@@ -3904,6 +4087,7 @@ static int fpm_nl_finish_early(struct fpm_nl_ctx *fnc)
 	event_cancel(&fnc->t_ribwalk);
 	event_cancel(&fnc->t_rmacreset);
 	event_cancel(&fnc->t_rmacwalk);
+	event_cancel(&fnc->t_pinwalk);
 	event_cancel(&fnc->t_event);
 	event_cancel(&fnc->t_nhg);
 	event_cancel_async(fnc->fthread->master, &fnc->t_read, NULL);
@@ -3927,6 +4111,7 @@ static int fpm_nl_finish_early(struct fpm_nl_ctx *fnc)
 static int fpm_nl_finish_late(struct fpm_nl_ctx *fnc)
 {
 	struct fpm_hw_mac_entry *e;
+	struct fpm_pin *p;
 
 	/* Stop the running thread. */
 	frr_pthread_stop(fnc->fthread, NULL);
@@ -3942,6 +4127,10 @@ static int fpm_nl_finish_late(struct fpm_nl_ctx *fnc)
 	while ((e = fpm_hw_macs_pop(&hw_macs)))
 		XFREE(MTYPE_FPM_HW_MAC, e);
 	fpm_hw_macs_fini(&hw_macs);
+
+	while ((p = fpm_mac_pins_pop(&mac_pins)))
+		XFREE(MTYPE_FPM_MAC_PIN, p);
+	fpm_mac_pins_fini(&mac_pins);
 
 	return 0;
 }
