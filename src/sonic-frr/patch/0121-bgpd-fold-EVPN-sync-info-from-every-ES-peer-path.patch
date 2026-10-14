@@ -191,6 +191,18 @@ index 0000000000..885b99033b
 +}
 +
 +#endif /* _FRR_BGP_EVPN_SYNC_FOLD_H */
+diff --git a/bgpd/subdir.am b/bgpd/subdir.am
+index 3e179075d6..d65efe55bb 100644
+--- a/bgpd/subdir.am
++++ b/bgpd/subdir.am
+@@ -128,6 +128,7 @@ noinst_HEADERS += \
+ 	bgpd/bgp_evpn.h \
+ 	bgpd/bgp_evpn_mh.h \
+ 	bgpd/bgp_evpn_private.h \
++	bgpd/bgp_evpn_sync_fold.h \
+ 	bgpd/bgp_evpn_vty.h \
+ 	bgpd/bgp_filter.h \
+ 	bgpd/bgp_flowspec.h \
 diff --git a/tests/bgpd/subdir.am b/tests/bgpd/subdir.am
 index 20e9fbb33c..28065a3805 100644
 --- a/tests/bgpd/subdir.am
