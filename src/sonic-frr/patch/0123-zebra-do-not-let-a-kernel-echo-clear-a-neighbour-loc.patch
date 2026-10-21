@@ -43,13 +43,19 @@ locally active. The MAC is driven by ASIC learning and ageing, so it is the
 trustworthy source here. This keeps the neighbour inactive while its MAC is
 gone and clears it again as soon as the MAC is relearnt.
 
+A neighbour new to the MAC, because it was just created, moved from another
+MAC or was remote, has no state of its own to keep, so it takes the MAC's.
+Otherwise it would come up active on a MAC that has already left the
+dataplane, and nothing would mark it inactive later: the inactive walker
+runs only on the MAC's transition.
+
 Signed-off-by: Tamer Ahmed <tamerahmed@microsoft.com>
 ---
 diff --git a/zebra/zebra_evpn_neigh.c b/zebra/zebra_evpn_neigh.c
-index 782201258c..ddb933e8f2 100644
+index 7731012e07..9c9c2efe57 100644
 --- a/zebra/zebra_evpn_neigh.c
 +++ b/zebra/zebra_evpn_neigh.c
-@@ -1598,10 +1598,18 @@ int zebra_evpn_local_neigh_update(struct zebra_evpn *zevpn,
+@@ -1579,10 +1579,25 @@ int zebra_evpn_local_neigh_update(struct zebra_evpn *zevpn,
  							      : zmac->loc_seq;
  	}
  
@@ -66,6 +72,13 @@ index 782201258c..ddb933e8f2 100644
 +		 * the trustworthy signal here; the NUD state is not.
 +		 */
  		UNSET_FLAG(n->flags, ZEBRA_NEIGH_LOCAL_INACTIVE);
++	} else if (created || neigh_mac_change || neigh_was_remote) {
++		/* A neighbour new to this MAC (created, relinked or moved from
++		 * remote) has no state of its own yet and takes the MAC's. The
++		 * inactive walker runs only on the MAC's transition, so it will
++		 * not mark this neighbour inactive later.
++		 */
++		SET_FLAG(n->flags, ZEBRA_NEIGH_LOCAL_INACTIVE);
 +	}
  
  	/* Mark Router flag (R-bit) */

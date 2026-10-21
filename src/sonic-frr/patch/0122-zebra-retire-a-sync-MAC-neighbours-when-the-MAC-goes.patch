@@ -35,15 +35,21 @@ still present after 15 minutes.
 Retire the neighbours on both transitions, using the same sequence the
 neighbour delete path already applies to a sync entry: mark locally
 inactive, recompute readiness for BGP, tell the client, and leave the
-entry in the dataplane where the peers still own it.
+entry in the dataplane where the peers still own it. A neighbour an ES peer
+still reports active stays advertised as a proxy route; the others are
+withdrawn.
+
+The walker does nothing when reachable-only advertisement is enabled:
+there the neighbour's own NUD state is the liveness signal, and the MAC
+must not override it.
 
 Signed-off-by: Tamer Ahmed <tamerahmed@microsoft.com>
 ---
 diff --git a/zebra/zebra_evpn_mac.c b/zebra/zebra_evpn_mac.c
-index cb7c13e197..8fd72a2b1e 100644
+index 5f9f84f34e..8f6c3b2bce 100644
 --- a/zebra/zebra_evpn_mac.c
 +++ b/zebra/zebra_evpn_mac.c
-@@ -2352,6 +2352,13 @@ int zebra_evpn_add_update_local_mac(struct zebra_vrf *zvrf,
+@@ -2397,6 +2397,13 @@ int zebra_evpn_add_update_local_mac(struct zebra_vrf *zvrf,
  		zebra_evpn_mac_send_add_del_to_client(mac, old_bgp_ready,
  						      new_bgp_ready);
  
@@ -57,7 +63,7 @@ index cb7c13e197..8fd72a2b1e 100644
  	/* Process all neighbors associated with this MAC, if required. */
  	if (upd_neigh)
  		zebra_evpn_process_neigh_on_local_mac_change(zevpn, mac, 0,
-@@ -2396,6 +2403,13 @@ int zebra_evpn_del_local_mac(struct zebra_evpn *zevpn, struct zebra_mac *mac,
+@@ -2441,6 +2448,13 @@ int zebra_evpn_del_local_mac(struct zebra_evpn *zevpn, struct zebra_mac *mac,
  				zebra_evpn_mac_is_ready_for_bgp(mac->flags);
  			zebra_evpn_mac_send_add_del_to_client(mac, old_bgp_ready,
  							      new_bgp_ready);
@@ -72,10 +78,10 @@ index cb7c13e197..8fd72a2b1e 100644
  
  		/* In EXT-LEARN mode as well, the MAC will be reprogrammed as static,
 diff --git a/zebra/zebra_evpn_neigh.c b/zebra/zebra_evpn_neigh.c
-index 290789e179..782201258c 100644
+index 9bbe08ab20..7731012e07 100644
 --- a/zebra/zebra_evpn_neigh.c
 +++ b/zebra/zebra_evpn_neigh.c
-@@ -1053,6 +1053,50 @@ void zebra_evpn_process_neigh_on_local_mac_del(struct zebra_evpn *zevpn,
+@@ -1025,6 +1025,57 @@ void zebra_evpn_process_neigh_on_local_mac_del(struct zebra_evpn *zevpn,
  	}
  }
  
@@ -84,11 +90,12 @@ index 290789e179..782201258c 100644
 + * inactive.
 + *
 + * Distinct from the MAC-delete case above: the MAC is still advertised by the
-+ * ES peers, so these neighbours must not be withdrawn. They are marked locally
-+ * inactive and re-advertised, which turns the MAC-IP route into a proxy route.
-+ * Without that the neighbour stays locally active, bgpd keeps reporting the
-+ * segment as active-on-peer, and the peers cancel the hold timer that would
-+ * otherwise retire the MAC once the host is gone from every leaf.
++ * ES peers. Each neighbour is marked locally inactive and re-evaluated: one an
++ * ES peer still reports active stays advertised as a proxy MAC-IP route, the
++ * rest are withdrawn. Without that the neighbour stays locally active, bgpd
++ * keeps reporting the segment as active-on-peer, and the peers cancel the hold
++ * timer that would otherwise retire the MAC once the host is gone from every
++ * leaf.
 + */
 +void zebra_evpn_process_neigh_on_local_mac_inactive(struct zebra_evpn *zevpn,
 +						    struct zebra_mac *zmac)
@@ -97,6 +104,12 @@ index 290789e179..782201258c 100644
 +	struct listnode *node = NULL;
 +	bool old_bgp_ready;
 +	bool new_bgp_ready;
++
++	/* When reachable-only advertisement is enabled the neighbour's own NUD
++	 * state is the liveness signal and the MAC must not override it.
++	 */
++	if (zebra_evpn_mh_do_adv_reachable_neigh_only())
++		return;
 +
 +	for (ALL_LIST_ELEMENTS_RO(zmac->neigh_list, node, n)) {
 +		if (!CHECK_FLAG(n->flags, ZEBRA_NEIGH_LOCAL))
@@ -127,10 +140,10 @@ index 290789e179..782201258c 100644
   * Process all neighbors associated with a MAC upon the MAC being remotely
   * learnt.
 diff --git a/zebra/zebra_evpn_neigh.h b/zebra/zebra_evpn_neigh.h
-index b7f3d1556d..370718e655 100644
+index 815a0e05f1..81fb426760 100644
 --- a/zebra/zebra_evpn_neigh.h
 +++ b/zebra/zebra_evpn_neigh.h
-@@ -231,6 +231,8 @@ void zebra_evpn_process_neigh_on_remote_mac_add(struct zebra_evpn *zevpn,
+@@ -259,6 +259,8 @@ void zebra_evpn_process_neigh_on_remote_mac_add(struct zebra_evpn *zevpn,
  						struct zebra_mac *zmac);
  void zebra_evpn_process_neigh_on_local_mac_del(struct zebra_evpn *zevpn,
  					       struct zebra_mac *zmac);
