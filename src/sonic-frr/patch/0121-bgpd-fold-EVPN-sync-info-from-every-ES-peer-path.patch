@@ -30,6 +30,10 @@ free of BGP types on purpose so it can be unit tested with an arbitrary
 number of peers without building a multi-PE topology. The accompanying
 test fails against the previous single-path behaviour.
 
+The tests need CUnit, so they are built only when configure finds it (the
+CUNIT conditional, from the libcunit check pceplib's tests already use) and
+are skipped otherwise, like FRR's other tests with an optional dependency.
+
 Signed-off-by: Tamer Ahmed <tamerahmed@microsoft.com>
 ---
 diff --git a/bgpd/bgp_evpn.c b/bgpd/bgp_evpn.c
@@ -203,18 +207,32 @@ index 3e179075d6..d65efe55bb 100644
  	bgpd/bgp_evpn_vty.h \
  	bgpd/bgp_filter.h \
  	bgpd/bgp_flowspec.h \
+diff --git a/configure.ac b/configure.ac
+index 1683c498d0..2fb9f442c9 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -2829,6 +2829,7 @@ AS_IF([test "$enable_pathd" != "no"], [
+        ])
+ AC_CHECK_LIB([cunit], [CU_initialize_registry], [pcep_cunit=yes],[pcep_cunit=no])
+ AM_CONDITIONAL([PATHD_PCEP_TEST], [test "x${pcep_cunit}" = xyes])
++AM_CONDITIONAL([CUNIT], [test "x${pcep_cunit}" = xyes])
+ AC_CHECK_PROG(VALGRIND_CHECK, valgrind, yes)
+ AM_CONDITIONAL([HAVE_VALGRIND_PCEP], [test "$VALGRIND_CHECK" = "yes"])
+ 
 diff --git a/tests/bgpd/subdir.am b/tests/bgpd/subdir.am
-index 20e9fbb33c..28065a3805 100644
+index 20e9fbb33c..3003432006 100644
 --- a/tests/bgpd/subdir.am
 +++ b/tests/bgpd/subdir.am
-@@ -79,3 +79,13 @@ tests_bgpd_test_peer_attr_CPPFLAGS = $(TESTS_CPPFLAGS)
+@@ -79,3 +79,15 @@ tests_bgpd_test_peer_attr_CPPFLAGS = $(TESTS_CPPFLAGS)
  tests_bgpd_test_peer_attr_LDADD = $(BGP_TEST_LDADD)
  tests_bgpd_test_peer_attr_SOURCES = tests/bgpd/test_peer_attr.c
  EXTRA_DIST += tests/bgpd/test_peer_attr.py
 +
 +
 +if BGPD
++if CUNIT
 +check_PROGRAMS += tests/bgpd/test_bgp_evpn_sync_fold
++endif
 +endif
 +tests_bgpd_test_bgp_evpn_sync_fold_CFLAGS = $(TESTS_CFLAGS)
 +tests_bgpd_test_bgp_evpn_sync_fold_CPPFLAGS = $(TESTS_CPPFLAGS)
@@ -223,10 +241,10 @@ index 20e9fbb33c..28065a3805 100644
 +EXTRA_DIST += tests/bgpd/test_bgp_evpn_sync_fold.py
 diff --git a/tests/bgpd/test_bgp_evpn_sync_fold.c b/tests/bgpd/test_bgp_evpn_sync_fold.c
 new file mode 100644
-index 0000000000..500390ea4c
+index 0000000000..b0a4f3cd61
 --- /dev/null
 +++ b/tests/bgpd/test_bgp_evpn_sync_fold.c
-@@ -0,0 +1,254 @@
+@@ -0,0 +1,256 @@
 +// SPDX-License-Identifier: GPL-2.0-or-later
 +/*
 + * Unit tests for the EVPN Ethernet Segment sync-info fold.
@@ -326,10 +344,12 @@ index 0000000000..500390ea4c
 +
 +	fold_all(proxy_first, 2, 0, &v);
 +	CU_ASSERT_TRUE(v.active_on_peer);
++	CU_ASSERT_TRUE(v.proxy_from_peer);
 +
 +	/* order must not change the verdict */
 +	fold_all(active_first, 2, 0, &v);
 +	CU_ASSERT_TRUE(v.active_on_peer);
++	CU_ASSERT_TRUE(v.proxy_from_peer);
 +}
 +
 +/* n=3 with every peer proxying is the only case that may withdraw. */
@@ -483,16 +503,24 @@ index 0000000000..500390ea4c
 +}
 diff --git a/tests/bgpd/test_bgp_evpn_sync_fold.py b/tests/bgpd/test_bgp_evpn_sync_fold.py
 new file mode 100644
-index 0000000000..03a4e73868
+index 0000000000..fd3df78df0
 --- /dev/null
 +++ b/tests/bgpd/test_bgp_evpn_sync_fold.py
-@@ -0,0 +1,9 @@
+@@ -0,0 +1,17 @@
 +# SPDX-License-Identifier: GPL-2.0-or-later
 +import frrtest
++import pytest
 +
++if 'S["CUNIT_TRUE"]=""\n' not in open("../config.status").readlines():
 +
-+class TestBgpEvpnSyncFold(frrtest.TestMultiOut):
-+    program = "./test_bgp_evpn_sync_fold"
++    class TestBgpEvpnSyncFold:
++        @pytest.mark.skipif(True, reason="CUnit not available")
++        def test_exit_cleanly(self):
++            pass
 +
++else:
 +
-+TestBgpEvpnSyncFold.onesimple("test_bgp_evpn_sync_fold: PASS")
++    class TestBgpEvpnSyncFold(frrtest.TestMultiOut):
++        program = "./test_bgp_evpn_sync_fold"
++
++    TestBgpEvpnSyncFold.onesimple("test_bgp_evpn_sync_fold: PASS")

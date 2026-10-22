@@ -25,19 +25,23 @@ departed MAC advertised forever: the peer flags clear, the MAC delete is
 evaluated while a sync neighbour reference is still held, and only then does
 the reference count reach zero.
 
+Like the bgpd fold test, the test is built only when CUnit is available.
+
 Signed-off-by: Tamer Ahmed <tamerahmed@microsoft.com>
 ---
 diff --git a/tests/zebra/subdir.am b/tests/zebra/subdir.am
-index d9fcde80a9..e7594ba608 100644
+index d9fcde80a9..cbc6b53127 100644
 --- a/tests/zebra/subdir.am
 +++ b/tests/zebra/subdir.am
-@@ -15,3 +15,14 @@ EXTRA_DIST += \
+@@ -15,3 +15,16 @@ EXTRA_DIST += \
  	tests/zebra/test_lm_plugin.py \
  	tests/zebra/test_lm_plugin.refout \
  	# end
 +
 +if ZEBRA
++if CUNIT
 +check_PROGRAMS += tests/zebra/test_zebra_evpn_mh_decisions
++endif
 +endif
 +tests_zebra_test_zebra_evpn_mh_decisions_CFLAGS = $(TESTS_CFLAGS)
 +tests_zebra_test_zebra_evpn_mh_decisions_CPPFLAGS = $(TESTS_CPPFLAGS)
@@ -302,19 +306,27 @@ index 0000000000..1d9c4f3cd9
 +}
 diff --git a/tests/zebra/test_zebra_evpn_mh_decisions.py b/tests/zebra/test_zebra_evpn_mh_decisions.py
 new file mode 100644
-index 0000000000..e89c7286d4
+index 0000000000..0e78be4e8e
 --- /dev/null
 +++ b/tests/zebra/test_zebra_evpn_mh_decisions.py
-@@ -0,0 +1,9 @@
+@@ -0,0 +1,17 @@
 +# SPDX-License-Identifier: GPL-2.0-or-later
 +import frrtest
++import pytest
 +
++if 'S["CUNIT_TRUE"]=""\n' not in open("../config.status").readlines():
 +
-+class TestZebraEvpnMhDecisions(frrtest.TestMultiOut):
-+    program = "./test_zebra_evpn_mh_decisions"
++    class TestZebraEvpnMhDecisions:
++        @pytest.mark.skipif(True, reason="CUnit not available")
++        def test_exit_cleanly(self):
++            pass
 +
++else:
 +
-+TestZebraEvpnMhDecisions.onesimple("test_zebra_evpn_mh_decisions: PASS")
++    class TestZebraEvpnMhDecisions(frrtest.TestMultiOut):
++        program = "./test_zebra_evpn_mh_decisions"
++
++    TestZebraEvpnMhDecisions.onesimple("test_zebra_evpn_mh_decisions: PASS")
 diff --git a/zebra/subdir.am b/zebra/subdir.am
 index 25c06572d4..0a94db57b1 100644
 --- a/zebra/subdir.am
@@ -506,10 +518,10 @@ index 0000000000..e2c060391e
 +
 +#endif /* _FRR_ZEBRA_EVPN_MH_DECISIONS_H */
 diff --git a/zebra/zebra_evpn_neigh.c b/zebra/zebra_evpn_neigh.c
-index 3247c5d859..b8b073dcf0 100644
+index 8b5e652835..c807ce5aa5 100644
 --- a/zebra/zebra_evpn_neigh.c
 +++ b/zebra/zebra_evpn_neigh.c
-@@ -1071,10 +1071,10 @@ void zebra_evpn_process_neigh_on_local_mac_inactive(struct zebra_evpn *zevpn,
+@@ -1074,10 +1074,10 @@ void zebra_evpn_process_neigh_on_local_mac_inactive(struct zebra_evpn *zevpn,
  		return;
  
  	for (ALL_LIST_ELEMENTS_RO(zmac->neigh_list, node, n)) {
@@ -524,7 +536,7 @@ index 3247c5d859..b8b073dcf0 100644
  			continue;
  
  		old_bgp_ready = zebra_evpn_neigh_is_ready_for_bgp(n);
-@@ -1125,10 +1125,10 @@ void zebra_evpn_process_neigh_on_local_mac_active(struct zebra_evpn *zevpn,
+@@ -1128,10 +1128,10 @@ void zebra_evpn_process_neigh_on_local_mac_active(struct zebra_evpn *zevpn,
  		return;
  
  	for (ALL_LIST_ELEMENTS_RO(zmac->neigh_list, node, n)) {
@@ -539,7 +551,7 @@ index 3247c5d859..b8b073dcf0 100644
  			continue;
  
  		old_bgp_ready = zebra_evpn_neigh_is_ready_for_bgp(n);
-@@ -1518,18 +1518,18 @@ int zebra_evpn_local_neigh_update(struct zebra_evpn *zevpn,
+@@ -1521,18 +1521,18 @@ int zebra_evpn_local_neigh_update(struct zebra_evpn *zevpn,
  					UNSET_FLAG(n->flags,
  						   ZEBRA_NEIGH_ROUTER_FLAG);
  
@@ -566,7 +578,7 @@ index 3247c5d859..b8b073dcf0 100644
  				new_bgp_ready =
  					zebra_evpn_neigh_is_ready_for_bgp(n);
  
-@@ -1658,25 +1658,14 @@ int zebra_evpn_local_neigh_update(struct zebra_evpn *zevpn,
+@@ -1661,25 +1661,14 @@ int zebra_evpn_local_neigh_update(struct zebra_evpn *zevpn,
  							      : zmac->loc_seq;
  	}
  
