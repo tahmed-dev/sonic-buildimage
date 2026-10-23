@@ -89,9 +89,10 @@ extern size_t fpm_mac_encode(const struct fpm_remote_mac *in, void *buf,
 			     size_t buflen);
 
 /*
- * A MAC zebra pins on a bridge port of a VLAN with no L2VNI: the pure-L3
- * neighbour an Ethernet Segment peer syncs pins its MAC on the local port of
- * that segment, so routed traffic reaches the host there.
+ * A MAC zebra pins static on the local port of an Ethernet Segment for a host
+ * the segment peer synced: on a VLAN with an L2VNI, a MAC only the peer has
+ * learnt; on a VLAN with none, the MAC of a pure-L3 neighbour, so routed
+ * traffic reaches the host there.
  */
 struct fpm_mac_pin {
 	int ifindex;		/* the Ethernet Segment port */
