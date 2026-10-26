@@ -46,6 +46,6 @@
 0123-bgpd-Fix-flags-used-by-use-underlays-nexthop-weight-command.patch
 0124-bgpd-Fix-route-map-use-count-for-SRv6-Service-routes.patch
 0125-bgpd-Flush-temporary-attr-after-SRv6-unicast-route-map.patch
-0120-SONiC-ONLY-run-the-FRR-unit-tests-during-the-package-build.patch
-0129-zebra-let-a-dataplane-module-learn-local-MACs.patch
-0130-SONiC-ONLY-dplane-fpm-sonic-split-out-MAC-decode-and-test.patch
+0126-SONiC-ONLY-run-the-FRR-unit-tests-during-the-package-build.patch
+0127-zebra-let-a-dataplane-module-learn-local-MACs.patch
+0128-SONiC-ONLY-dplane-fpm-sonic-split-out-MAC-decode-and-test.patch
