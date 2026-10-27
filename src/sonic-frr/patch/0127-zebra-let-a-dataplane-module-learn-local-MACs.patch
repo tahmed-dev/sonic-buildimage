@@ -25,6 +25,12 @@ host, or reboots, takes the host's MAC off this switch too. While a
 dataplane module learns local MACs, zebra flushes only a local-inactive
 MAC at expiry; an active one stays until the module reports it gone.
 
+An active MAC that stops being static, at hold timer expiry or when its
+last sync neighbour goes, gets no dataplane write in mac-ext-learn mode,
+which writes only local-inactive MACs. A module that pinned the MAC for
+the peer would keep the pin. While a dataplane module learns local MACs,
+zebra writes such a MAC once more, plain, which ends the pin.
+
 Ignoring those notifications also drops the local MACs zebra reads from the
 kernel when an L2VNI is added or comes up, or when BGP enables EVPN. MACs
 the ASIC already has would stay unknown until the module reports them
@@ -58,7 +64,7 @@ index 945ec8541f..2209e94d5b 100644
  	 * via multicast, if any.
  	 */
 diff --git a/zebra/zebra_evpn_mac.c b/zebra/zebra_evpn_mac.c
-index 5f9f84f34e..07433ef8f0 100644
+index 5f9f84f34e..f98d664bda 100644
 --- a/zebra/zebra_evpn_mac.c
 +++ b/zebra/zebra_evpn_mac.c
 @@ -26,6 +26,7 @@
@@ -69,7 +75,23 @@ index 5f9f84f34e..07433ef8f0 100644
  
  DEFINE_MTYPE_STATIC(ZEBRA, MAC, "EVPN MAC");
  
-@@ -1546,7 +1547,13 @@ static void zebra_evpn_mac_hold_exp_cb(struct event *t)
+@@ -1480,9 +1481,13 @@ int zebra_evpn_sync_mac_dp_install(struct zebra_mac *mac, bool set_inactive,
+ 		return 0;
+ 	}
+ 
+-	if (!zebra_mac_ext_learn_mode() || CHECK_FLAG(mac->flags, ZEBRA_MAC_LOCAL_INACTIVE)) {
++	if (!zebra_mac_ext_learn_mode() || CHECK_FLAG(mac->flags, ZEBRA_MAC_LOCAL_INACTIVE) ||
++	    (zebra_neigh_dplane_mac_learning() && !set_static)) {
+ 		/* For Extern Only mode:
+-		 *  Update the dataplane only when the MAC is inactive
++		 *  Update the dataplane only when the MAC is inactive, or when
++		 *  an active MAC stops being static and a dataplane module
++		 *  learns local MACs: the module keeps the MAC pinned until
++		 *  this write ends it.
+ 		 */
+ 		if (IS_ZEBRA_DEBUG_EVPN_MH_MAC) {
+ 			char mac_buf[MAC_BUF_SIZE];
+@@ -1546,7 +1551,13 @@ static void zebra_evpn_mac_hold_exp_cb(struct event *t)
  			   zebra_evpn_zebra_mac_flag_dump(mac, mac_buf, sizeof(mac_buf)));
  	}
  
